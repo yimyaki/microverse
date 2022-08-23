@@ -18,25 +18,13 @@
 class DoorActor {
     setup() { // Start With Logic, Continue With Physics Implementation
         this.ratio = 0;
-        this.pointA = [0.7482445787060128, 8.582744231334745, 10.455007034792178];
-        this.pointB = [0.7482445787060128, 6.298663957567469, 10.455007034792178];
+        this.pointA = [0,0,0];//[1.2408218526149692, -0.4389610670180847, -7.391705311856144];//[0.7482445787060128, 8.582744231334745, 10.455007034792178];
+        this.pointB = [0,4,0];//[1.2408218526149692, 2.4389610670180847, -7.391705311856144];//[0.7482445787060128, 6.298663957567469, 10.455007034792178];
         if (this.ratio === undefined) this.ratio = 0.2;
         this.updatePositionBy(0);
         console.log("foo3");
-        // this.doorBase = this.createCard({ // Create Base
-        //     name: "doorBase",
-        //     translation: [0, 0, 0],
-        //     scale: [0.9, 0.9, 0.9],
-        //     dataScale: [3.384158349075, 3.384158349075, 3.384158349075],
-        //     parent: this,
-        //     modelType: "glb",
-        //     //dataLocation: "37HFPvPUY4QXMcTPpuY0scmEoR9I1QR5KegrT2iJ-RasX0NDR0QNGBhRXltSRBlCRBlURVhGQlJDGV5YGEIYTWJDQGd4TXFCeGQGfF5Qem1eAgQOT3FzcA8HBRheWBlURVhGQlJDGVpeVEVYQVJFRFIZW1hUVltTUkFTUlFWQltDGG9EQlEPYQ9_X1wHfgV8VgRBAGVzGm1fY20HAW98b19GXlJxUEFEWHp-TQMYU1ZDVhhCRURBXGdgQ19fVXNvDg9VUkdnQFpbUnhkA3Ncf2UGflZUb3hSclMPU3lm",
-        //     //dataLocation: "35H7xJVLhQNFxNMt5HZigey3PXGNeREIgL3fy_PNJaOsXUFBRUYPGhpTXFlQRhtARhtWR1pEQFBBG1xaGkAadm19f1NxelhAfFNccGxaWntsQmVjTHpXXgVTBxpWWlgbUE1UWEVZUBtBR1BDWkcbWExYXFZHWkNQR0ZQGmABZQcHckV0cnJDXlRReGB3B3JMam0DeUwEGGENWgNhZAxaB1NgWUB0B2waUVRBVBpDQGJqeEV7ZmNQc2JZAWIHAndQVEZ8fURQY0NlBmp_UAd-DH9FZXRXUkRC",
-        //     doorHandlesEvent: true,
-        //     noSave: true,
-        //     shadow: true,
-        //     type: "3d",
-        // });
+        this.left_dots = [];
+        this.right_dots = [];
         if (!this.checking) {
             this.checking = true;
             this.step();
@@ -54,19 +42,30 @@ class DoorActor {
         let button2 = false;
         avatars.forEach((a) => {
             //console.log(Microverse.v3_magnitude(Microverse.v3_sub(a.translation, [-14, 0, 14])));
-             if (Microverse.v3_magnitude(Microverse.v3_sub(a.translation, [28, 0, 28])) < 3) {
+            if (Microverse.v3_magnitude(Microverse.v3_sub(a.translation,[-1.7,1.7,0] )) < 1) {  //[28, 0, 28]
                 console.log("found");
-                 button1 = true;
+                button1 = true;
+                this.publish("global", "change_color", {scope: 'left', color: 0x00FF00});
             }
-            if (Microverse.v3_magnitude(Microverse.v3_sub(a.translation, [-28, 0, 28])) < 3) {
+            if (Microverse.v3_magnitude(Microverse.v3_sub(a.translation, [1.7,1.7,0])) < 1) {  //[-28, 0, 28]
                 console.log("found2");
                 button2 = true;
+                this.publish("global", "change_color", {scope: 'right', color: 0x00FF00});
             }
         });
-        if (button1 && button2){
-                 //this.publish("opendoor");
-                 this.updatePositionBy(.01);
-                 console.log("pressed");
+        if(!button1){
+            this.publish("global", "change_color", {scope: 'left', color: 0xD86508});
+        }
+        if(!button2){
+            this.publish("global", "change_color", {scope: 'right', color: 0xD86508});
+        }
+        if (button1 || button2){
+                //this.publish("opendoor");
+            this.updatePositionBy(.01);
+            console.log("pressed");
+            this.publish("global", "change_color", {scope: 'middle', color: 0x00FF00});
+        }else{
+            this.publish("global", "change_color", {scope: 'middle', color: 0xD86508});
         }
         this.future(100).step();
     }
@@ -81,6 +80,30 @@ class DoorActor {
         console.log(pos);
         this.set({translation: pos});//Microverse.v3_lerp(this.pointA, this.pointB, this.ratio)});
         //this.publish("doorLink", "handlePhysics", ratio); // Physics
+        if(this.ratio == 1){
+            this.pressed();
+        }
+    }
+
+    pressed() {
+        if (this.hasOpened) {return;}
+        this.hasOpened = true;
+
+        this.createCard({
+            translation: [0, 1.5, -10],//[0, 9.1, 8],
+            rotation: [0, -3.14, 0],
+            layers: ["pointer"],
+            className: "PortalActor",
+            color: 0xFF66CC,
+            cornerRadius: 0.05,
+            depth: 0.05,
+            frameColor: 8947848,
+            portalURL: "?world=default",
+            type: "2d",
+            width: 1.8,
+            height: 2.4,
+        });
+        this.say("portalChanged");
     }
 }
 
@@ -91,34 +114,38 @@ class DoorPawn {
         this.addEventListener("pointerDoubleDown", "nop");
     }
 }
-/*
+
 class DoorButtonActor { // Buttons Move Door
     setup() {
         this.occupier = undefined;
-        this.listen("publishMove", "publishMove");
+        //this.listen("publishMove", "publishMove");
         this.listen("pressButton", "pressButton");
-        this.listen("publishFocus", "publishFocus");
-        this.subscribe(this._cardData.myScope, "focus", "focus");
+        //this.listen("publishFocus", "publishFocus");
+        //this.subscribe(this._cardData.myScope, "focus", "focus");
+        this.subscribe("global", "change_color","pressButton");
+        this.scope = this._cardData.myScope;
     }
 
     // Publish Translation
-    publishMove() {
-        if (this.occupier !== undefined) { 
-            this.future(60).publishMove(); 
-        }
-        this.publish("door", "updatePositionBy", this._cardData.doorSpeed);
-    }
+    // publishMove() {
+    //     if (this.occupier !== undefined) { 
+    //         this.future(60).publishMove(); 
+    //     }
+    //     this.publish("door", "updatePositionBy", this._cardData.doorSpeed);
+    // }
 
     // Update Translation
     pressButton(data) {
-        let {translation, color} = data;
-        this.translateTo(translation);
-        this.say("updateColor", color);
+        let {scope, color} = data;
+        //this.translateTo(translation);
+        if(this.scope == scope){
+            this.say("updateColor", color);
+        }
     }
 
     // Publish New Focus
     publishFocus(viewId) {
-        this.publish(this._cardData.myScope, "focus", viewId);
+        //this.publish(this._cardData.myScope, "focus", viewId);
     }  
 
     // Focus Controlling Player
@@ -126,69 +153,30 @@ class DoorButtonActor { // Buttons Move Door
         this.occupier = viewId;
     }
 }
-*/
-/*
+
 class DoorButtonPawn {
     setup() {
         this.shape.children.forEach((c) => this.shape.remove(c));
         this.shape.children = [];
+        //this.left_dots = [];
+        this.right_dots = [];
+        // if (this.shape.children.length === 0) {
+        //     //for i in range....
 
-        if (this.shape.children.length === 0) {
-
-            let shape = new Microverse.THREE.Shape();
-            shape.moveTo(0, 0);
-            shape.lineTo(-0.08, 0); // Start of First Curve
-            shape.quadraticCurveTo(-0.1, 0, -0.1, 0.025); // End of First Curve
-            shape.lineTo(-0.1, 0.2);
-            shape.quadraticCurveTo(-0.1, 0.25, -0.125, 0.25);
-            shape.lineTo(-0.15, 0.25);
-            shape.quadraticCurveTo(-0.25, 0.25, -0.15, 0.35);
-            shape.lineTo(-0.05, 0.45);
-            shape.quadraticCurveTo(0, 0.5, 0.05, 0.45);
-            shape.lineTo(0.15, 0.35);
-            shape.quadraticCurveTo(0.25, 0.25, 0.15, 0.25);
-            shape.lineTo(0.125, 0.25);
-            shape.quadraticCurveTo(0.1, 0.25, 0.1, 0.2);
-            shape.lineTo(0.1, 0.025);
-            shape.quadraticCurveTo(0.1, 0, 0.08, 0); 
-            shape.lineTo(0, 0);
-
-            let extrudeSettings = {
-                bevelEnabled: true,
-                bevelThickness: 0,
-                bevelSize: 0,
-                bevelOffset: 0,
-                bevelSegments: 0,
-                depth: 0.15,
-                steps: 5,
-            }
-
-            let geometry = new Microverse.THREE.ExtrudeGeometry(shape, extrudeSettings);
-            let material = new Microverse.THREE.MeshStandardMaterial({color: this.actor._cardData.color || 0xD86508});
-            this.obj = new Microverse.THREE.Mesh(geometry, material);
-            this.obj.castShadow = this.actor._cardData.shadow;
-            this.obj.receiveShadow = this.actor._cardData.shadow;
-            this.shape.add(this.obj);
-
-            // let geometryB = new Microverse.THREE.BoxGeometry(0.2, 0.25, 0.2);
-            // let geometryT = new Microverse.THREE.BoxGeometry(0.2, 0.2, 0.2);
-            // let material = new Microverse.THREE.MeshStandardMaterial({color: this.actor._cardData.color || 0xD86508});
-
-            // this.objB = new Microverse.THREE.Mesh(geometryB, material);
-            // this.objT = new Microverse.THREE.Mesh(geometryT, material);
-
-            // if (this.actor._cardData.doorSpeed > 0) { this.objT.translateY(0.1); }
-            // else { this.objT.translateY(-0.1); } 
-            // this.objT.rotation.z = Math.PI / 4;
-
-            // this.objB.castShadow = this.actor._cardData.shadow;
-            // this.objB.receiveShadow = this.actor._cardData.shadow;
-            // this.shape.add(this.objB);
-
-            // this.objT.castShadow = this.actor._cardData.shadow;
-            // this.objT.receiveShadow = this.actor._cardData.shadow;
-            // this.shape.add(this.objT);
-        }
+        //     let geometry = new Microverse.THREE.CircleGeometry(.1,8);
+        //     let material = new Microverse.THREE.MeshStandardMaterial({color: this.actor._cardData.color || 0xD86508});
+        //     this.obj = new Microverse.THREE.Mesh(geometry, material);
+        //     this.shape.add(this.obj);
+        // }
+        let geometry = new Microverse.THREE.CircleGeometry(.08,8);
+        this.left_dots =   [...Array(10).keys()].map((i) => {
+            let material =  new Microverse.THREE.MeshStandardMaterial({color: this.actor._cardData.color || 0xD86508});
+            let dot = new Microverse.THREE.Mesh(geometry, material);
+            dot.position.set(0, 0, i * .25);
+            dot.rotation.set(-Math.PI/2,0,0)
+            this.shape.add(dot);
+            return dot;
+        });
 
         this.addEventListener("pointerDown", "start");
         this.addEventListener("pointerUp", "stop");
@@ -214,9 +202,14 @@ class DoorButtonPawn {
     }
 
     updateColor(color) {
-        this.obj.material.color.set(color);
+        this.left_dots.forEach((dot) => {
+            dot.material.color.set(color);
+            //this.future(1000);
+        });
+        //this.obj.material.color.set(color);
     }
-}*/
+}
+
 
 /* Three behavior modules are exported from this file. */
 
@@ -227,12 +220,33 @@ export default {
             actorBehaviors: [DoorActor],
             pawnBehaviors: [DoorPawn]
         },
-        // {
-        //     name: "DoorButton",
-        //     actorBehaviors: [DoorButtonActor],
-        //     pawnBehaviors: [DoorButtonPawn],
-        // }
+        {
+            name: "DoorButton",
+            actorBehaviors: [DoorButtonActor],
+            pawnBehaviors: [DoorButtonPawn],
+        }
     ]
 }
 
 /* globals Microverse */
+/*   let geom = 
+
+this.dots =   [...Array(10).keys()].map((i) => {
+   let mat = 
+    let dot = new THREE.Mesh(...)
+    dot.position.set(x, y, i * blah + foo);
+    this.shape.add(dot);
+   return dot;
+});
+
+
+
+
+changeColor() {
+if complete:
+  return
+if(standing)
+  this.dots[3].material.color.set(...)
+else(
+ this.dots[]
+this.future*/
