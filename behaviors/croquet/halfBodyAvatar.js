@@ -116,6 +116,8 @@ class AvatarPawn {
         let otherHand = this.bones.get(this.otherHandName);
         if (otherHand) {
             otherHand.position.set();
+        } else {
+            return;
         }
 
         this.moveHand([0, 1, -100]);
@@ -243,7 +245,7 @@ class AvatarPawn {
         // console.log(this.actor._cardData.animationClipIndex);
         if (!pointing) {
             hand.rotation.set(Math.PI, hFactor * Math.PI / 2, 0);
-            hand.position.set(...v3_add(elbowPos, [0, -0.25, -0.3]));
+            hand.position.set();//...v3_add(elbowPos, [0, -0.25, -0.3]));
             this.say("setAnimationClipIndex", 0);
         } else {
             this.say("setAnimationClipIndex", this.handedness === "Left" ? 12 : 9);
@@ -304,6 +306,7 @@ class AvatarPawn {
     }
 
     teardown() {
+        delete this.bones;
         this.removeUpdateRequest(["HalfBodyAvatarEventHandler$AvatarPawn", "maybeMove"]);
         if (!this.isMyPlayerPawn) {return;}
         console.log("avatar event handler detached");
