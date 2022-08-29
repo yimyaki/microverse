@@ -10,7 +10,7 @@ class LightPawn {
 
         this.setupCSM(scene, camera, Microverse.THREE);
 
-        const ambient = new Microverse.THREE.AmbientLight( 0xffffff, .2 );//0x3d3b3d
+        const ambient = new Microverse.THREE.AmbientLight( 0x60e0f7, .2 );//0x3d3b3d
         group.add(ambient);
         this.lights.push(ambient);
 
@@ -87,7 +87,7 @@ class LightPawn {
             lightDirection: dir,
             camera: camera,
             parent: scene,
-            lightIntensity: 0.8,
+            lightIntensity: 0.6,
             lightFar: 1000,
             mode: "practical"
         });
