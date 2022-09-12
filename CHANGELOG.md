@@ -3,6 +3,27 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2022-09-02
+### Changed
+- Version is updated to 0.1.7
+
+### Fixed
+- Loading a behavior in a VRSE file works again.
+- Mitigate initial avatar rendering issues
+
+## 2022-08-26
+### Added
+- Voice chat and Avatar selection page is added.
+
+### Fixed
+- Some code clean up.
+- Further tweaking on avatar translucency.
+- successive 3D model load requests handled properly (the last one wins)
+- The half body avatar's hand position is tweaked.
+
+### Modified
+- Hooks around avatar customization.
+
 ## 2022-08-19
 ### Fixed
 - properly show behaviors already selected in property sheet.

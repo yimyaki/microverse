@@ -2,6 +2,8 @@
 // https://croquet.io
 // info@croquet.io
 
+/* globals XRRigidTransform */
+
 import {
     Data, App, View, mix, GetPawn, AM_Player, PM_Player,
     v3_zero, v3_isZero, v3_add, v3_sub, v3_scale, v3_sqrMag, v3_normalize, v3_rotate, v3_multiply, v3_lerp, v3_transform, v3_magnitude, v3_equals,
@@ -19,19 +21,11 @@ import {setupWorldMenuButton, filterDomEventsOn} from "./worldMenu.js";
 import { startSettingsMenu } from "./settingsMenu.js";
 
 const EYE_HEIGHT = 1.676;
-// const EYE_EPSILON = 0.01;
-const FALL_DISTANCE = EYE_HEIGHT / 12;
-const MAX_FALL = -15;
-const MAX_V = 0.015;
-const KEY_V = MAX_V / 2;
-// const MAX_SPIN = 0.0004;
-// const JOYSTICK_V = 0.000030;
 const COLLIDE_THROTTLE = 50;
 const THROTTLE = 15; // 20
 const PORTAL_DISTANCE = 0.4; // tuned to the girth of the avatars
 const COLLISION_RADIUS = 0.8;
 const M4_ROTATIONY_180 = m4_rotationY(Math.PI);
-const Q_ROTATION_180 = q_euler(0, Math.PI, 0);
 let initialPortalLookExternal;
 
 
@@ -90,7 +84,6 @@ export class AvatarActor extends mix(CardActor).with(AM_Player) {
 
     // used by the BVH based walking logic. customizable when the avatar is not a human size.
     get collisionRadius() { return this._cardData.collisionRadius || COLLISION_RADIUS; }
-    get fallDistance(){ return this._fallDistance || FALL_DISTANCE }; // how far we fall per update
     get inWorld() { return !!this._inWorld; }   // our user is either in this world or render
 
     ensureNicknameCard() {
@@ -484,7 +477,7 @@ export class AvatarActor extends mix(CardActor).with(AM_Player) {
     createPortal(translation, rotation, portalURL) {
         // sigh - all portals are "backwards"
         // or maybe *all* models are backwards and we need to fix dropPose and avatar models?
-        rotation = q_multiply(Q_ROTATION_180, rotation); // flip by 180 degrees
+        rotation = q_multiply(q_euler(0, Math.PI, 0), rotation); // flip by 180 degrees
 
         let card = {
             name: "portal",
@@ -617,11 +610,24 @@ const PM_SmoothedDriver = superclass => class extends superclass {
     }
 }
 
+function setModelOpacity(model, visible, opacity) {
+    let transparent = opacity !== 1;
+    model.visible = visible;
+    model.traverse(n => {
+        n.renderOrder = 10000; // render this only after everything else
+        if (n.material && n.material.opacity !== opacity) {
+            n.material.opacity = opacity;
+            n.material.transparent = transparent;
+            n.material.side = THREE.DoubleSide;
+            n.material.needsUpdate = true;
+        }
+    });
+}
+
 class RemoteAvatarPawn extends mix(CardPawn).with(PM_Player, PM_ThreeVisible) {
     constructor(actor) {
         super(actor);
         this.lastUpdateTime = 0;
-        this.opacity = 1;
 
         this.spin = q_identity();
         this.velocity = [0, 0, 0];
@@ -648,7 +654,13 @@ class RemoteAvatarPawn extends mix(CardPawn).with(PM_Player, PM_ThreeVisible) {
         console.log("remote avatar model loaded");
         delete this.lastOpacity;
         delete this.lastInWorld;
-        this.modelHasLoaded = true;
+        this.modelLoadTime = Date.now();
+        setModelOpacity(this.shape.children[0], true, 0);
+    }
+
+    detach() {
+        delete this.modelLoadTime;
+        super.detach();
     }
 }
 
@@ -662,7 +674,6 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         this.lastUpdateTime = 0;
         this.lastCollideTime = 0;
         this.lastCollideTranslation = this.actor.translation;
-        this.opacity = 1;
 
         this.spin = q_identity();
         this.velocity = v3_zero();
@@ -680,6 +691,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         const renderMgr = this.service("ThreeRenderManager");
         this.camera = renderMgr.camera;
         this.scene = renderMgr.scene;
+        renderMgr.avatar = this; // hack
 
         this.lastHeight = EYE_HEIGHT; // tracking the height above ground
         this.yawDirection = -1; // which way the mouse moves the world depends on if we are using WASD or not
@@ -691,7 +703,12 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
 
         this.portalcaster = new THREE.Raycaster(new THREE.Vector3(), new THREE.Vector3(), 0, PORTAL_DISTANCE);
 
-        this.future(100).fadeNearby();
+        this.fadeNearby();
+        if (this.fadeNearbyInterval) {
+            clearInterval(this.fadeNearbyInterval);
+            this.fadeNearbyInterval = null;
+        }
+        this.fadeNearbyInterval = setInterval(() => this.fadeNearby(), 100);
 
         document.getElementById("homeBttn").onclick = () => this.goHome();
         filterDomEventsOn(document.getElementById("homeBttn"));
@@ -707,6 +724,10 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         setupWorldMenuButton(this, App, this.sessionId);
 
         window.myAvatar = this;
+
+        this.eyeHeight = EYE_HEIGHT;
+        this.fallDistance = EYE_HEIGHT / 12;
+        this.maxFall = -15;
 
         // drop and paste
         this.service("AssetManager").assetManager.setupHandlersOn(document, (buffer, fileName, type) => {
@@ -792,6 +813,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
             }
         }
         addShellListener(this.shellListener);
+
         // initialize actor
         // the fact that we're creating an AvatarPawn rather than a RemoteAvatarPawn
         // means that this pawn is for the local user.  it will either be for the
@@ -850,8 +872,13 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
     }
 
     detach() {
-        super.detach();
         dormantAvatarSpec = this.specForRevival();
+        if (this.fadeNearbyInterval) {
+            clearInterval(this.fadeNearbyInterval);
+            this.fadeNearbyInterval = null;
+        }
+        delete this.modelLoadTime;
+        super.detach();
     }
 
     startMotion(dx, dy) {
@@ -1042,7 +1069,8 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         console.log("avatar model loaded");
         delete this.lastOpacity;
         delete this.lastInWorld;
-        this.modelHasLoaded = true;
+        this.modelLoadTime = Date.now();
+        setModelOpacity(this.shape.children[0], true, 0);
     }
 
     setEditMode(evt) {
@@ -1241,8 +1269,8 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         // in alphabetical order, each property triggering a say(`${propname}Set`).
         this.say("_set", actorSpec);
         if (enteringWorld) {
+            delete this.modelLoadTime;
             this.say("setAvatarData", actorSpec.cardData || {}); // NB: after setting actor's name
-            this.modelHasLoaded = false;
             // start presenting and following in new space too
             if (spec?.presenting) {
                 let manager = this.actor.service("PlayerManager");
@@ -1310,6 +1338,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
                         this.positionTo(vq.v, vq.q);
                     }
                 }
+                this.updateXRReference();
                 this.refreshCameraTransform();
 
                 // this part is copied from CardPawn.update()
@@ -1325,6 +1354,23 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         }
         this.updatePortalRender();
     }
+
+    updateXRReference() {
+        let manager = this.service("ThreeRenderManager");
+        if (!manager.origReferenceSpace) {return;}
+        let xr = manager.renderer.xr;
+
+        let inv = m4_invert(this.global);
+        let vv = m4_getTranslation(inv);
+        let rr = m4_getRotation(inv);
+
+        let offsetTransform = new XRRigidTransform(
+            {x: vv[0], y: vv[1], z: vv[2]},
+            {x: rr[0], y: rr[1], z: rr[2], w: rr[3]});
+
+        let newSpace = manager.origReferenceSpace.getOffsetReferenceSpace(offsetTransform);
+        xr.setReferenceSpace(newSpace);
+   }
 
     // compute motion from spin and velocity
     updatePose(delta) {
@@ -1447,9 +1493,9 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
     checkFall(vq) {
         if (!this.isFalling) {return vq;}
         let v = vq.v;
-        v = [v[0], v[1] - this.actor.fallDistance, v[2]];
+        v = [v[0], v[1] - this.fallDistance, v[2]];
         this.isFalling = false;
-        if (v[1] < MAX_FALL) {
+        if (v[1] < this.maxFall) {
             this.goHome();
             return {v: v3_zero(), q: q_identity()};
         }
@@ -1585,11 +1631,6 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
             onGround = onGround || positionChanged && velocity[1] < -0.1 && Math.abs(velocity[0]) < 0.001 && Math.abs(velocity[2]) < 0.001;
         }
 
-        if (!this.checkFloor({v: newPosition, q: vq.q})) {
-            let newv = v3_lerp(this.lastCollideTranslation, vq.v, -1);
-            return {v: newv, q: vq.q};
-        }
-
         if (onGround) {
             this.isFalling = false;
             return {v: this.translation, q: vq.q};
@@ -1708,6 +1749,9 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         // you can override the avatars behavior.
         let w = this.wasdVelocity;
         let nw;
+
+        const MAX_V = 0.015;
+        const KEY_V = MAX_V / 2;
 
         if (e.ctrlKey || e.altKey) {
             switch(e.key) {
@@ -1849,7 +1893,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
                 console.log("pointerDown in editMode");
             }
         } else {
-            if (!this.focusPawn) {
+            if (!this.focusPawn && e.xy) {
                 // because this case is called as the last responder, facusPawn should be always empty
                 this.dragWorld = this.xy2yp(e.xy);
                 this.lookYaw = q_yaw(this._rotation);
@@ -1873,7 +1917,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
             }
         }else {
             // we should add and remove responders dynamically so that we don't have to check things this way
-            if (!this.focusPawn && this.isPointerDown) {
+            if (!this.focusPawn && this.isPointerDown && e.xy) {
                 let yp = this.xy2yp(e.xy);
                 let yaw = (this.lookYaw + (this.dragWorld[0] - yp[0]) * this.yawDirection);
                 let pitch = this.lookPitch + this.dragWorld[1] - yp[1];
@@ -1932,11 +1976,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         let setOpacity = (pawn, opacity) => {
             const inWorld = pawn.actor.inWorld;
             // don't try to set (and record) opacity until the avatar has its model
-            if (!pawn.modelHasLoaded || (pawn.lastOpacity === opacity && pawn.lastInWorld === inWorld)) {return;}
-
-            if (pawn.lastOpacity === undefined) {
-                opacity = 0;
-            }
+            if (!pawn.modelLoadTime || (pawn.lastOpacity === opacity && pawn.lastInWorld === inWorld)) {return;}
 
             pawn.lastOpacity = opacity;
             pawn.lastInWorld = inWorld;
@@ -1949,20 +1989,11 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
             }
 
             let model = pawn.shape.children[0];
-
             if (!model) {return;}
 
-            let transparent = opacity !== 1;
-            let visible = pawn.actor.inWorld && opacity !== 0;
-            model.visible = visible;
-            model.traverse(n => {
-                if (n.material && n.material.opacity !== opacity) {
-                    n.material.opacity = opacity;
-                    n.material.transparent = transparent;
-                    n.material.side = THREE.DoubleSide;
-                    n.material.needsUpdate = true;
-                }
-            });
+            let visible = inWorld && opacity !== 0;
+            setModelOpacity(model, visible, opacity);
+
             // don't mess with opacity levels of children, but make them
             // visible or invisible appropriately
             if (pawn._children) {
@@ -1996,7 +2027,6 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
                 setOpacity(p, d);
             }
         }
-        this.future(100).fadeNearby();
     }
 
     addChild(id) {
@@ -2013,12 +2043,13 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         let oldCardData = {...actor._cardData};
         let handlerModuleName = this.actor._cardData.avatarEventHandler;
         let behaviorModules = actor._behaviorModules || [];
+        let avatarType = oldCardData.avatarType;
 
         [
             "dataLocation", "dataTranslation", "dataScale", "dataRotation",
-            "modelType", "type", "name", "shadow"].forEach((n) => {delete oldCardData[n];});
+            "modelType", "type", "name", "shadow", "avatarType"].forEach((n) => {delete oldCardData[n];});
 
-        if (!configuration.type) {
+        if (!configuration.type && !avatarType) {
             let options = {
                 name: this.actor._name,
                 dataScale: [0.3, 0.3, 0.3],
@@ -2075,6 +2106,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
                 const configuration = window.settingsMenuConfiguration;
                 sendToShell("update-configuration", { localConfig: configuration });
                 let tempCardSpec = this.makeCardSpecFrom(window.settingsMenuConfiguration, this.actor);
+                delete this.modelLoadTime;
                 this.say("setAvatarData", tempCardSpec);
                 this.modelHasLoaded = false;
             }
