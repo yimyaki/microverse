@@ -5,7 +5,7 @@ class BloomPassPawn {
 
         // tweak these values to get a different looking bloom effect
         const params = {
-            exposure: 1,
+            exposure: 1.5,
             bloomStrength: 1.5,
             bloomThreshold: .3,
             bloomRadius: 0,

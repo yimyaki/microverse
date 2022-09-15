@@ -1,4 +1,3 @@
-// tutorial2.js
 // Copyright 2022 by Croquet Corporation, Inc. All Rights Reserved.
 // https://croquet.io
 // info@croquet.io
@@ -10,7 +9,7 @@ export function init(Constants) {
 
     Constants.UserBehaviorDirectory = "behaviors/scifi";
     Constants.UserBehaviorModules = [
-        "lights.js", "joeTheBox.js", "simpleSpin.js","door.js", "bloompass.js","tutorial.js",//"buttonLight.js", //,"openPortal.js"
+        "lights.js", "joeTheBox.js", "simpleSpin.js","door.js", "bloompass.js","tutorial.js", "glowingText.js", "worldRevolve.js"//"buttonLight.js", //,"openPortal.js"
     ];
     Constants.UseRapier = true;
 
@@ -21,10 +20,10 @@ export function init(Constants) {
             card: {
                 name:"world model",
                 type: "3d",
-                dataLocation: "./assets/3D/SciFi_test_3.zip",
+                dataLocation: "./assets/3D/SciFi_4.zip",
                 dataScale:[2,2,2], //[2,2,2]
                 //singleSided: true,
-                //behaviorModules:["BloomPass"],
+                behaviorModules:["BloomPass","WorldPawn"],
                 shadow: true,
                 layers: ["walk"],
                 translation:[0, 0, 0],
@@ -79,7 +78,7 @@ export function init(Constants) {
             card: {
                 name:"button",
                 type: "3d",
-                dataLocation: "./assets/3D/SciFi_leftbuttonlight.zip",
+                dataLocation: "./assets/3D/SciFi_4_Left_lights.zip",
                 //fileName: "/testcube_1m.glb.zip",
                 behaviorModules: ["ButtonLight"],
                 myScope:"left",
@@ -93,7 +92,7 @@ export function init(Constants) {
             card: {
                 name:"button2",
                 type: "3d",
-                dataLocation: "./assets/3D/SciFi_rightbuttonlight.zip",
+                dataLocation: "./assets/3D/SciFi_4_Right_lights.zip",
                 //fileName: "/testcube_1m.glb.zip",
                 behaviorModules: ["ButtonLight"],
                 myScope:"right",
@@ -103,42 +102,42 @@ export function init(Constants) {
                 shadow: true,
             }
         },
-        {
-            card: {
-                name:"panel light2",
-                type: "3d",
-                dataLocation: "./assets/3D/SciFi_rightboxlight.zip",
-                //fileName: "/testcube_1m.glb.zip",
-                behaviorModules: ["ButtonLight"],
-                myScope:"right_panel",
-                layers: ["pointer"],
-                translation:[0, 0, 0],
-                dataScale:[2,2,2],
-                shadow: true,
-            }
-        },
-        {
-            card: {
-                name:"panel light",
-                type: "3d",
-                dataLocation: "./assets/3D/SciFi_leftboxlight.zip",
-                //fileName: "/testcube_1m.glb.zip",
-                layers: ["pointer"],
-                behaviorModules: ["ButtonLight"],
-                myScope:"left_panel",
-                translation:[0, 0, 0],
-                dataScale:[2,2,2],
-                shadow: true,
-            }
-        },
+        // {
+        //     card: {
+        //         name:"panel light2",
+        //         type: "3d",
+        //         dataLocation: "./assets/3D/SciFi_rightpanellight.zip",
+        //         //fileName: "/testcube_1m.glb.zip",
+        //         behaviorModules: ["ButtonLight"],
+        //         myScope:"right_panel",
+        //         layers: ["pointer"],
+        //         translation:[0, 0, 0],
+        //         dataScale:[2,2,2],
+        //         shadow: true,
+        //     }
+        // },
+        // {
+        //     card: {
+        //         name:"panel light",
+        //         type: "3d",
+        //         dataLocation: "./assets/3D/SciFi_leftpanellight.zip",
+        //         //fileName: "/testcube_1m.glb.zip",
+        //         layers: ["pointer"],
+        //         behaviorModules: ["ButtonLight"],
+        //         myScope:"left_panel",
+        //         translation:[0, 0, 0],
+        //         dataScale:[2,2,2],
+        //         shadow: true,
+        //     }
+        // },
         {
             card: {
                 name:"planet",
                 type: "3d",
-                dataLocation: "./assets/3D/purple_planet.zip",
+                dataLocation: "./assets/3D/space_station.zip",
                 //fileName: "/testcube_1m.glb.zip",
                 layers: ["pointer"],
-                translation:[15, 5, -10],
+                translation:[500, 5, -500],
                 dataScale:[4,4,4],
                 shadow: true,
             }
@@ -163,7 +162,7 @@ export function init(Constants) {
             card: {
                 name: "floor circle left",
                 type: "object",
-                translation: [-2.9, .205, 0],//-1], // [7.770442246960653, 1.7540892281749288, 13.950883253194933],
+                translation: [-2, .20, 1],//-1], // [7.770442246960653, 1.7540892281749288, 13.950883253194933],
                 rotation: [0, 0, 0],
                 behaviorModules: ["DoorButton"],
                 shadow: true,
@@ -174,9 +173,9 @@ export function init(Constants) {
         },
         {
             card: {
-                name: "tutorial gif",
+                name: "Dust",
                 type: "object",
-                translation: [1, 1, 0],//-1], // [7.770442246960653, 1.7540892281749288, 13.950883253194933],
+                translation: [0, 0, 0],//-1], // [7.770442246960653, 1.7540892281749288, 13.950883253194933],
                 rotation: [0, 0, 0],
                 behaviorModules: ["TutorialGif"],
                 shadow: true,
@@ -188,9 +187,24 @@ export function init(Constants) {
         },
         {
             card: {
+                name: "Text",
+                type: "object",
+                translation: [0, 0, 0],//-1], // [7.770442246960653, 1.7540892281749288, 13.950883253194933],
+                rotation: [0, 0, 0],
+                behaviorModules: ["GlowText"],
+                shadow: true,
+                text: "Partner Needed",
+                text2: "Scan QR for Entry",
+                level: 1,
+                //singleSided:false,
+
+            }
+        },
+        {
+            card: {
                 name: "floor circle right",
                 type: "object",
-                translation: [2.9, .205, 0],//-1], // [7.770442246960653, 1.7540892281749288, 13.950883253194933],
+                translation: [2, .20, 1],//-1], // [7.770442246960653, 1.7540892281749288, 13.950883253194933],
                 rotation: [0, 0, 0],
                 behaviorModules: ["DoorButton"],
                 shadow: true,
@@ -202,7 +216,7 @@ export function init(Constants) {
             card: {
                 name: "floor circle middle",
                 type: "object",
-                translation: [0, .205, -5], // [7.770442246960653, 1.7540892281749288, 13.950883253194933],
+                translation: [0, .20, -5.75], // [7.770442246960653, 1.7540892281749288, 13.950883253194933],
                 rotation: [0, 0, 0],
                 behaviorModules: ["DoorButton"],
                 shadow: true,
@@ -210,13 +224,33 @@ export function init(Constants) {
                 level: 1,
             }
         },
+        // {
+        //     card: {
+        //         translation: [0, 2.5, 8.5],
+        //         scale: [2, 2, 2],
+        //         rotation: [0, 0, 0, 1],
+        //         layers: ["pointer"],
+        //         name: "/Group 192.png",
+        //         cornerRadius: 0.02,
+        //         fileName: "/Group 192.png",
+        //         fullBright: false,
+        //         modelType: "img",
+        //         shadow: true,
+        //         singleSided: true,
+        //         textureLocation: "3dbVMCMeVHmQoRX1BH8uxp6cCh6izEk_v5CbIrHYOLdIDBAQFBdeS0sCDQgBF0oRF0oHFgsVEQEQSg0LSxFLHjEQEzQrHiIRKzdVLw0DKT4NUVddHCIgI1xUVksNC0oHFgsVEQEQSgkNBxYLEgEWFwFKCAsHBQgAARIAAQIFEQgQSwo1JSMUBiAsKAIUVihJFTEuD1wWKTUFVAohHAlRFjsjAgwOMC8AJi8JPDFLAAUQBUtQIg5dHBU9NChSCjwGKVYMDRMuCyMXMB0vEhxWDz4RVRwLMgMAIgFSPhAX",
+        //         textureType: "image",
+        //         type: "2d",
+        //     }
+
+        // },
         {
             card: {
                 name: "start point",
                 type: "object",
-                translation: [0,1.7,9],//[-20.524493842661624, 0.06300000000000061, 22.522668218635697],
+                translation: [0,3.3,12.5],//[-20.524493842661624, 0.06300000000000061, 22.522668218635697],
                 rotation: [0,0,0],//[0, -1.4990420669195301, 0],
                 spawn: "default"
+                //todo:this.lookTo(-0.3, 0, [0, 0, 0])
             }
         }
     ];

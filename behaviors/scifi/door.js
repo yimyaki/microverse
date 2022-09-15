@@ -22,12 +22,14 @@ class DoorActor {
         this.pointB = [0,4,0];//[1.2408218526149692, 2.4389610670180847, -7.391705311856144];//[0.7482445787060128, 6.298663957567469, 10.455007034792178];
         if (this.ratio === undefined) this.ratio = 0.2;
         this.updatePositionBy(0);
-        console.log("foo3");
-        this.left_dots = [];
-        this.right_dots = [];
+        //this.bars = Array();
+        //this.audio = new Audio('./assets/tink.wav');
+        this.dots = [];
         this.left_button = false;
         this.right_button = false;
         this.middle_line =false;
+        this.green = 0x40FF00;
+        this.red = 0xFF3020;
         if (!this.checking) {
             this.checking = true;
             this.step();
@@ -60,26 +62,28 @@ class DoorActor {
         let button2 = false;
         avatars.forEach((a) => {
             //console.log(Microverse.v3_magnitude(Microverse.v3_sub(a.translation, [-14, 0, 14])));
-            if (Microverse.v3_magnitude(Microverse.v3_sub(a.translation,[-1.7,1.7,0] )) < 1) {  //[28, 0, 28]
+            if (Microverse.v3_magnitude(Microverse.v3_sub(a.translation,[-2,2,2.1] )) < 1.4) {  //[28, 0, 28]
                 //console.log("found");
                 button1 = true;
                 
             }
-            if (Microverse.v3_magnitude(Microverse.v3_sub(a.translation, [1.7,1.7,0])) < 1) {  //[-28, 0, 28]
+            if (Microverse.v3_magnitude(Microverse.v3_sub(a.translation, [2,2,2.1])) < 1.4) {  //[-28, 0, 28]
                 //console.log("found2");
                 button2 = true;
                 
             }
         });
         if(!button1){
-            this.publish("global", "change_color", {scope: 'left', color: 0xFF7300, direction: -1});
+            this.publish("global", "change_color", {scope: 'left', color: this.red, direction: -1});
         }else{
-            this.publish("global", "change_color", {scope: 'left', color: 0x40FF00, direction: 1});
+            this.publish("global", "change_color", {scope: 'left', color: this.green, direction: 1});
+            //this.audio.play();
         }
         if(!button2){
-            this.publish("global", "change_color", {scope: 'right', color: 0xFF7300, direction: -1});
+            this.publish("global", "change_color", {scope: 'right', color: this.red, direction: -1});
         }else{
-            this.publish("global", "change_color", {scope: 'right', color: 0x40FF00, direction: 1});
+            this.publish("global", "change_color", {scope: 'right', color: this.green, direction: 1});
+            //this.audio.play();
         }
         if (button1 && button2){
                 //this.publish("opendoor");
@@ -88,14 +92,17 @@ class DoorActor {
             //console.log("pressed");
             if(this.left_button&&this.right_button){
                 if(this.middle_line){
-                this.updatePositionBy(.01);}
+                    this.updatePositionBy(.01);
+                    this.publish("global", "change_opac", {scope: 'middle_panel', opac: -0.01, direction: 1});
+                }
                 //console.log("pressed");
-                this.publish("global", "change_color", {scope: 'middle', color: 0x40FF00, direction: 1});
+                this.publish("global", "change_color", {scope: 'middle', color: this.green, direction: 1});
             }
         }else{
             if(this.ratio<1){
-                this.publish("global", "change_color", {scope: 'middle', color: 0xFF7300, direction: -1});
+                this.publish("global", "change_color", {scope: 'middle', color: this.red, direction: -1});
                 this.updatePositionBy(-0.01);
+                this.publish("global", "change_opac", {scope: 'middle_panel', opac: 0.01, direction: 1});
             }
         }
         this.future(100).step();
@@ -129,7 +136,7 @@ class DoorActor {
             cornerRadius: 0.05,
             depth: 0.05,
             frameColor: 8947848,
-            portalURL: "?world=default",
+            portalURL: "?world=smallfactory",
             type: "2d",
             width: 1.8,
             height: 2.4,
@@ -140,7 +147,6 @@ class DoorActor {
 
 class DoorPawn {
     setup() {
-
         this.removeEventListener("pointerDoubleDown", "onPointerDoubleDown");
         this.addEventListener("pointerDoubleDown", "nop");
     }
@@ -197,10 +203,12 @@ class DoorButtonPawn {
     setup() {
         //this.shape.children.forEach((c) => this.shape.remove(c));
         //this.shape.children = [];
-        if (this.left_dots) {
-            this.left_dots.forEach((d) => d.removeFromParent());
+        if (this.dots) {
+            this.dots.forEach((d) => d.removeFromParent());
         }
         let scope = this.actor._cardData.myScope;
+        this.red =  0xFF3020;
+        this.green = 0x40FF00;
         //this.left_dots = [];
         //this.right_dots = [];
         // if (this.shape.children.length === 0) {
@@ -212,16 +220,16 @@ class DoorButtonPawn {
         //     this.shape.add(this.obj);
         // }
         let sign = scope=="left"?-1:1;
-        let arrLen = scope=="middle"?10:26;
+        let arrLen = scope=="middle"?10:27;
         let angle = Math.PI*5/12;
         let here = [0,0]
         let dotDist = 0.3
         let geometry = new Microverse.THREE.CircleGeometry(.08,8);
-        this.left_dots =   [...Array(arrLen).keys()].map((i) => {
-            let material =  new Microverse.THREE.MeshStandardMaterial({color: this.actor._cardData.color || 0xFF7300});
+        this.dots =   [...Array(arrLen).keys()].map((i) => {
+            let material =  new Microverse.THREE.MeshStandardMaterial({color: this.actor._cardData.color || this.red});
             let dot = new Microverse.THREE.Mesh(geometry, material);
             dot.position.set(here[0], 0, here[1]);
-            if(i<15){
+            if(i<20){
                 here[1]-=dotDist;
             }else{
                 here[0]-= dotDist*Math.sin(sign*angle);
@@ -260,67 +268,52 @@ class DoorButtonPawn {
     updateColor(data) {
         
         let {color, direction} = data;
-        let dotArr = this.left_dots;
-        this.left_dots[this.currDot].material.color.set(color);
+        let dotArr = this.dots;
+        this.dots[this.currDot].material.color.set(color);
         this.currDot += direction;
-        this.currDot = Math.max(0, Math.min(this.currDot, this.left_dots.length - 1));
+        this.currDot = Math.max(0, Math.min(this.currDot, this.dots.length - 1));
         let scope = this.actor._cardData.myScope;
         if(scope=="left"){
         //console.log(this.currDot, direction);
-            if(this.currDot>15){
-                this.publish("global", "change_color", {scope: 'left_panel', color: 0x40FF00, direction: 1});
+            if(this.currDot>28){
+                this.publish("global", "change_color", {scope: 'left_panel', color: this.green, direction: 1});
             }else{
-                this.publish("global", "change_color", {scope: 'left_panel', color: 0xFF7300, direction: 1});
+                this.publish("global", "change_color", {scope: 'left_panel', color: this.red, direction: 1});
             }
-            if(this.currDot== (this.left_dots.length - 1)){
+            if(this.currDot== (this.dots.length - 1)){
                 this.publish("global", "doorLoadComplete", {scope:"left", isComp:true});
             }
-            if(this.currDot== (this.left_dots.length - 2)){
+            if(this.currDot== (this.dots.length - 2)){
                 this.publish("global", "doorLoadComplete", {scope:"left", isComp:false});
             }
         }
         if(scope=="right"){
             //console.log(this.currDot, direction);
-                if(this.currDot>15){
-                    this.publish("global", "change_color", {scope: 'right_panel', color: 0x40FF00, direction: 1});
-                }else{
-                    this.publish("global", "change_color", {scope: 'right_panel', color: 0xFF7300, direction: 1});
-                }
-                if(this.currDot== (this.left_dots.length - 1)){
-                    this.publish("global", "doorLoadComplete", {scope:"right", isComp:true});
-                }
-                if(this.currDot== (this.left_dots.length - 2)){
-                    this.publish("global", "doorLoadComplete", {scope:"right", isComp:false});
-                }
+            if(this.currDot>28){
+                this.publish("global", "change_color", {scope: 'right_panel', color: this.green, direction: 1});
+            }else{
+                this.publish("global", "change_color", {scope: 'right_panel', color: this.red, direction: 1});
+            }
+            if(this.currDot== (this.dots.length - 1)){
+                this.publish("global", "doorLoadComplete", {scope:"right", isComp:true});
+            }
+            if(this.currDot== (this.dots.length - 2)){
+                this.publish("global", "doorLoadComplete", {scope:"right", isComp:false});
+            }
         }
         if(scope=="middle"){
-            //console.log(this.currDot, direction);
-                if(this.currDot== (this.left_dots.length - 1)){
-                    this.publish("global", "change_color", {scope: 'middle_panel', color: 0x40FF00, direction: 1});
-                }else{
-                    this.publish("global", "change_color", {scope: 'middle_panel', color: 0xFF7300, direction: 1});
-                }
-                if(this.currDot== (this.left_dots.length - 1)){
-                    this.publish("global", "doorLoadComplete", {scope:"middle", isComp:true});
-                }
-                if(this.currDot== (this.left_dots.length - 2)){
-                    this.publish("global", "doorLoadComplete", {scope:"middle", isComp:false});
-                }
+            if(this.currDot== (this.dots.length - 1)){
+                this.publish("global", "change_color", {scope: 'middle_panel', color: this.green, direction: 1});
+            }else{
+                this.publish("global", "change_color", {scope: 'middle_panel', color: this.red, direction: 1});
+            }
+            if(this.currDot== (this.dots.length - 1)){
+                this.publish("global", "doorLoadComplete", {scope:"middle", isComp:true});
+            }
+            if(this.currDot== (this.dots.length - 2)){
+                this.publish("global", "doorLoadComplete", {scope:"middle", isComp:false});
+            }
         }
-        /*if(direction == 1){
-            dotArr = this.left_dots.slice().reverse();
-        }
-        let interval = 100;
-        dotArr.forEach(
-            function (dot, index) {
-                setTimeout(function () {
-                    dot.material.color.set(color);
-                }, index * interval); 
-            /*(dot) => {
-            dot.material.color.set(color);
-        });*/
-        
-        //this.obj.material.color.set(color);
     }
 }
 
@@ -331,7 +324,6 @@ class ButtonLightActor { // Buttons Move Door
         //this.subscribe("global", "change_color","pressButton");
         this.scope = this._cardData.myScope;
         this.level = this._cardData.level;
-        //.material.color.set(0xFF330B);
     }
 
     pressButton(data) {
@@ -345,24 +337,30 @@ class ButtonLightPawn {
     setup() {
         //this.shape.children.forEach((c) => this.shape.remove(c));
         //this.shape.children = [];
-        if (this.left_dots) {
-            this.left_dots.forEach((d) => d.removeFromParent());
+        if (this.dots) {
+            this.dots.forEach((d) => d.removeFromParent());
         }
-        console.log(this.shape);
-        //this.shape[0].material.color.set(0xFF330B);
-        this.color = 0xFF7300;
+        //console.log(this.shape);
+        this.color = 0xFF3020;
+        this.opacity = 1;
+        this.transparent = false;
         this.scope = this.actor._cardData.myScope;
         this.isLoaded = false;
         this.listen("updateColor", "updateColor");
 
         this.subscribe(this.id, "3dModelLoaded", "modelLoaded");
         this.subscribe("global", "change_color","updateColor");
+        this.subscribe("global", "change_opac", "updateTransparent");
     }
 
     modelLoaded() {
         this.shape.children[0].traverse((mesh) => {
             if (mesh.material) {
-               mesh.material.emissive.set(this.color);
+                mesh.material.emissive.set(this.color);
+                if (this.scope == 'middle_panel'){
+                    mesh.material.transparent = this.transparent;
+                    mesh.material.opacity = this.opacity;
+                }
                //mesh.material.color.set(this.color);
                //mesh.material.emissiveIntensity.set(2);
             }
@@ -383,6 +381,19 @@ class ButtonLightPawn {
         }
         //let {color, direction} = data;
         //this.material.color.set(color);
+    }
+
+    updateTransparent(data) {
+        let {scope, opac, direction} = data;
+        //console.log(this.scope, scope);
+        if (this.scope == scope){
+            //console.log(opac);
+            this.transparent = true;
+            this.opacity = Math.min(1,Math.max(this.opacity+opac));
+            if(this.isLoaded){
+                //this.modelLoaded();
+            }
+        }
     }
 }
 
