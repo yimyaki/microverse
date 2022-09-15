@@ -207,6 +207,7 @@ class XRController {
                 manager.avatar.doPointerDown(e);
             }
             controller.userData.pointerDown = true;
+            controller.userData.pointerDownTime = Date.now();
         }
 
         function selectEnd(controller, evt) {
@@ -217,9 +218,16 @@ class XRController {
                     id: 1,
                     source: evt,
                 };
+                if (controller.userData.pointerDownTime) {
+                    let now = Date.now();
+                    if (now - controller.userData.pointerDownTime < 400) {
+                        manager.avatar.doPointerTap(e);
+                    }
+                }
                 manager.avatar.doPointerUp(e);
             }
             controller.userData.pointerDown = false;
+            controller.userData.pointerDownTime = null;
         }
 
         [0, 1].forEach((i) => {
@@ -234,6 +242,7 @@ class XRController {
             });
             c.addEventListener("disconnected", () => {
                 c.remove(c.children[0]);
+                manager.origReferenceSpace = null;
             });
             manager.scene.add(c);
 
@@ -281,13 +290,17 @@ class XRController {
         dy += this.gamepad0?.axes[3] || 0;
         dy += this.gamepad1?.axes[3] || 0;
 
-        if (this.lastDelta[0] === 0 && this.lastDelta[1] === 0 &&
-            dx !== 0 && dy !== 0) {
+        if ((this.lastDelta[0] === 0 && this.lastDelta[1] === 0) &&
+            (dx !== 0 || dy !== 0)) {
+            console.log("startMotion");
             avatar.startMotion();
         }
-        avatar.updateMotion(dx * 80, dy * 80);
-        if (this.lastDelta[0] !== 0 && this.lastDelta[1] !== 0 &&
-            dx === 0 && dy === 0) {
+
+        if (dx !== 0 || dy !== 0) {
+            avatar.updateMotion(dx * 80, dy * 80);
+        }
+        if ((this.lastDelta[0] !== 0 || this.lastDelta[1] !== 0) &&
+            (dx === 0 && dy === 0)) {
             avatar.endMotion();
         }
         this.lastDelta = [dx, dy];
@@ -353,7 +366,7 @@ class ThreeRenderManager extends RenderManager {
         if (this.canvas) {
             options.canvas = this.canvas;
         }
-        
+
         this.renderer = new THREE.WebGLRenderer(options);
         this.renderer.shadowMap.enabled = true;
 
@@ -380,10 +393,8 @@ class ThreeRenderManager extends RenderManager {
     }
 
     hasXR() {
-        if (navigator.xr) {
-            return navigator.xr.isSessionSupported("immersive-vr");
-        }
-        return Promise.resolve(false);
+        return navigator.xr.isSessionSupported("immersive-vr").then((supported) => supported)
+            .catch((_err) => false);
     }
 
     destroy() {

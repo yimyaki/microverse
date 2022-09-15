@@ -7,6 +7,7 @@ const {ViewService, ModelService, GetPawn, Model, Constants} = WorldcoreExports;
 
 import * as WorldcoreThreeExports from "./ThreeRender.js";
 import * as WorldcoreRapierExports from "./physics.js";
+import * as FrameExports from "./frame.js";
 
 //console.log(WorldcoreRapierExports);
 
@@ -96,7 +97,7 @@ export const AM_Code = superclass => class extends superclass {
     future(time) {
         if (!this[isProxy]) {return super.future(time);}
         let behaviorName = this._behavior.$behaviorName;
-        let moduleName = this._behavior.module.name;
+        let moduleName = this._behavior.module.externalName;
         return this.futureWithBehavior(time, moduleName, behaviorName);
     }
 
@@ -400,7 +401,7 @@ export const PM_Code = superclass => class extends superclass {
                 if (pawnBehaviors) {
                     for (let behavior of pawnBehaviors.values()) {
                         if (behavior.$behavior.teardown) {
-                            this.call(`${behavior.module.name}$${behavior.$behaviorName}`, "teardown");
+                            this.call(`${behavior.module.externalName}$${behavior.$behaviorName}`, "teardown");
                         }
                     };
                 }
@@ -592,7 +593,7 @@ class ScriptingBehavior extends Model {
         let code = `return (${source})`;
         let cls;
         try {
-            const Microverse = {...WorldcoreExports, ...WorldcoreThreeExports, ...WorldcoreRapierExports};
+            const Microverse = {...WorldcoreExports, ...WorldcoreThreeExports, ...WorldcoreRapierExports, ...FrameExports};
             cls = new Function("Worldcore", "Microverse", code)(Microverse, Microverse);
         } catch(error) {
             console.log("error occured while compiling:", source, error);

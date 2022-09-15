@@ -665,6 +665,7 @@ class RemoteAvatarPawn extends mix(CardPawn).with(PM_Player, PM_ThreeVisible) {
 }
 
 let dormantAvatarSpec = null;
+let useDormantAvatarSpec = true;
 export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver, PM_ThreeVisible, PM_ThreeCamera, PM_Pointer) {
     constructor(actor) {
         super(actor);
@@ -872,7 +873,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
     }
 
     detach() {
-        dormantAvatarSpec = this.specForRevival();
+        this.setDormantAvatarSpec(this.specForRevival());
         if (this.fadeNearbyInterval) {
             clearInterval(this.fadeNearbyInterval);
             this.fadeNearbyInterval = null;
@@ -1179,6 +1180,16 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         return spec;
     }
 
+    setDormantAvatarSpec(data) {
+        if (useDormantAvatarSpec) {
+            dormantAvatarSpec = data;
+        }
+    }
+
+    useDormantAvatarSpec(bool) {
+        useDormantAvatarSpec = bool;
+    }
+
     specForPortal(portal, jumpVector, crossingBackwards) {
         // we are about to enter this portal. meaning we disappear from this world and appear in the target world
         // visually nothing should change, so we need this avatar's position relative to the portal, as well as
@@ -1338,7 +1349,6 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
                         this.positionTo(vq.v, vq.q);
                     }
                 }
-                this.updateXRReference();
                 this.refreshCameraTransform();
 
                 // this part is copied from CardPawn.update()
@@ -1352,14 +1362,15 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
                 }
             }
         }
+        this.updateXRReference();
         this.updatePortalRender();
     }
 
     updateXRReference() {
         let manager = this.service("ThreeRenderManager");
         if (!manager.origReferenceSpace) {return;}
-        let xr = manager.renderer.xr;
 
+        let xr = manager.renderer.xr;
         let inv = m4_invert(this.global);
         let vv = m4_getTranslation(inv);
         let rr = m4_getRotation(inv);
@@ -1370,7 +1381,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
 
         let newSpace = manager.origReferenceSpace.getOffsetReferenceSpace(offsetTransform);
         xr.setReferenceSpace(newSpace);
-   }
+    }
 
     // compute motion from spin and velocity
     updatePose(delta) {
@@ -1468,6 +1479,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         }
 
     }
+
     checkFloor(vq) {
         // cast a ray to negative y direction and see if there is a walk layer object
         let walkLayer = this.service("ThreeRenderManager").threeLayer("walk");
@@ -2011,6 +2023,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         for (let [_viewId, a] of manager.players) {
             // a for actor, p for pawn
             let p = GetPawn(a.id);
+            if (!p) {continue;}
             if (!this.actor.inWorld) {
                 setOpacity(p, 1); // we are not even here so don't affect their opacity
             } else if (a.follow) {
@@ -2046,7 +2059,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         let avatarType = oldCardData.avatarType;
 
         [
-            "dataLocation", "dataTranslation", "dataScale", "dataRotation",
+            "dataLocation", "dataTranslation", "dataScale", "dataRotation", "handedness",
             "modelType", "type", "name", "shadow", "avatarType"].forEach((n) => {delete oldCardData[n];});
 
         if (!configuration.type && !avatarType) {
@@ -2157,6 +2170,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         if (newCard) {
             this.lastCardId = newCard.id;
             let pawn = GetPawn(newCard.id);
+            if (!pawn) {return;}
             let pose = pawn.getJumpToPose ? pawn.getJumpToPose() : null;
 
             if (pose) {
