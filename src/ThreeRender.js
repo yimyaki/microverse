@@ -19,6 +19,7 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 import { FontLoader, Font } from 'three/examples/jsm/loaders/FontLoader.js';
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutlinePass } from 'three/examples/jsm/postprocessing/OutlinePass.js';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/examples/jsm//webxr/XRControllerModelFactory.js';
 
@@ -111,6 +112,8 @@ const PM_ThreeCamera = superclass => class extends PM_Camera(superclass) {
         const render = this.service("ThreeRenderManager");
         if (!this.raycaster) this.raycaster = new THREE.Raycaster();
         this.raycaster.setFromCamera({x: x, y: y}, render.camera);
+        this.raycaster.params.Line = {threshold: 0.2};
+        this.raycaster.params.Point = {threshold: 0.2};
         return this.raycaster;
     }
 
@@ -129,7 +132,9 @@ const PM_ThreeCamera = superclass => class extends PM_Camera(superclass) {
         }
         const render = this.service("ThreeRenderManager");
         const h = this.raycaster.intersectObjects(targets || render.threeLayer("pointer"));
-        if (h.length === 0) return {};
+        if (h.length === 0) {
+            return {ray: this.raycaster.ray.clone()};
+        }
 
         let hit;
         let normal;
@@ -152,6 +157,16 @@ const PM_ThreeCamera = superclass => class extends PM_Camera(superclass) {
             }
         }
 
+        for (let i = 0; i < h.length; i++) {
+            let me = h[i].object;
+            if (me.renderOrder > 1000) {
+            // we would actually sort them in renderOrder, but for now we use only for special cases,
+            // and orders among objects with renderOrder should not come in play easily
+                hit = h[i];
+                break;
+            }
+        }
+
         if (!hit) {
             hit = h[0];
         }
@@ -162,15 +177,15 @@ const PM_ThreeCamera = superclass => class extends PM_Camera(superclass) {
         if (normal) {
             let m = new THREE.Matrix3().getNormalMatrix( hit.object.matrixWorld );
             normal = normal.clone().applyMatrix3( m ).normalize();
-        } /*else {
-            normal = new THREE.Vector3(0,1,0);
-        }*/
+        }
+
         return {
             pawn: this.getPawn(hit.object),
             xyz: hit.point.toArray(),
             uv: hit.uv ? hit.uv.toArray() : undefined,
             normal: normal ? normal.toArray() : undefined,
-            distance: hit.distance
+            distance: hit.distance,
+            ray: this.raycaster.ray.clone()
         };
     }
 
@@ -292,7 +307,6 @@ class XRController {
 
         if ((this.lastDelta[0] === 0 && this.lastDelta[1] === 0) &&
             (dx !== 0 || dy !== 0)) {
-            console.log("startMotion");
             avatar.startMotion();
         }
 
@@ -373,11 +387,36 @@ class ThreeRenderManager extends RenderManager {
         this.hasXR().then((xr) => {
             if (xr) {
                 this.vrButton = VRButton.createButton(this.renderer);
+                let styleCallback = (records, _observer) => {
+                    let styleChanged = false;
+
+                    for (let i = 0; i < records.length; i++) {
+                        if (records[i].type === "attributes") {
+                            styleChanged = true;
+                            break;
+                        }
+                    }
+                    if (styleChanged) {
+                        if (this.vrButton.textContent === "ENTER VR") {
+                            if (this.vrButton.style.left) {
+                                this.vrButton.style.removeProperty("left");
+                                this.vrButton.style.setProperty("right", "20px");
+                            }
+                        }
+                    }
+                };
+                if (this.observer) {
+                    this.observer.disconnect();
+                    this.observer = null;
+                }
+                this.observer = new MutationObserver(styleCallback);
+                this.observer.observe(this.vrButton, {attributes: true, attributeFilter: ["style"]});
+
                 document.body.appendChild(this.vrButton);
                 this.renderer.xr.enabled = true;
                 this.xrController = new XRController(this);
             } else {
-                // at this moment, there is no effects added but this is where it will go.
+                // at this moment, there is no effects added but this is where they will go.
                 this.composer = new EffectComposer( this.renderer );
                 this.renderPass = new RenderPass( this.scene, this.camera );
                 this.composer.addPass( this.renderPass );
@@ -388,13 +427,39 @@ class ThreeRenderManager extends RenderManager {
         });
     }
 
+    installOutlinePass(){
+        if(!this.outlinePass){
+            this.outlinePass = new OutlinePass( new THREE.Vector2( window.innerWidth, window.innerHeight ), this.scene, this.camera );
+            this.outlinePass.edgeStrength = 3.0;
+            this.outlinePass.edgeGlow = 0.1;
+            this.outlinePass.edgeThickness = 1.5;
+            this.outlinePass.pulsePeriod = 2.0;
+            this.outlinePass.visibleEdgeColor.set( '#88ff88' );
+            this.outlinePass.hiddenEdgeColor.set( '#ff0000' );
+            this.outlinePass.selectedObjects = [];
+            this.composer.addPass( this.outlinePass );
+        }
+    }
+
+    addToOutline(obj){
+        if(!this.outlinePass)this.installOutlinePass();
+        this.outlinePass.selectedObjects.push( obj );
+    }
+
+    clearOutline(){
+        this.outlinePass.selectedObjects = [];
+    }
+
     setRender(bool) {
         this.doRender = bool;
     }
 
-    hasXR() {
-        return navigator.xr.isSessionSupported("immersive-vr").then((supported) => supported)
-            .catch((_err) => false);
+    async hasXR() {
+        try {
+            return await navigator.xr.isSessionSupported("immersive-vr");
+        } catch (_) {
+            return false;
+        }
     }
 
     destroy() {

@@ -6,7 +6,7 @@ import {
     Constants, App, ModelRoot, ViewRoot, StartWorldcore,
     InputManager, PlayerManager, q_euler} from "@croquet/worldcore-kernel";
 import { THREE, ThreeRenderManager } from "./ThreeRender.js";
-import { RapierPhysicsManager } from "./physics.js";
+import { PhysicsManager } from "./physics.js";
 import { AgoraChatManager } from "./agoraChat.js";
 import {
     KeyFocusManager, SyncedStateManager,
@@ -19,7 +19,8 @@ import { BehaviorModelManager, BehaviorViewManager, CodeLibrary, checkModule } f
 import { TextFieldActor } from "./text/text.js";
 import { PortalActor } from "./portal.js";
 import { WorldSaver } from "./worldSaver.js";
-import { startSettingsMenu } from "./settingsMenu.js";
+import { startSettingsMenu, startShareMenu } from "./settingsMenu.js";
+
 // apps -------------------------------------------
 import { MultiBlaster } from '../apps/multiblaster.js';
 
@@ -35,12 +36,14 @@ const defaultAvatarNames = [
 
 const defaultSystemBehaviorDirectory = "behaviors/croquet";
 const defaultSystemBehaviorModules = [
-    "avatarEvents.js", "billboard.js", "elected.js", "menu.js", "pdfview.js", "propertySheet.js", "rapier.js", "scrollableArea.js", "singleUser.js", "stickyNote.js", "halfBodyAvatar.js"
+    "avatarEvents.js", "billboard.js", "elected.js", "menu.js", "pdfview.js", "propertySheet.js", "physics.js", "rapier.js", "scrollableArea.js", "singleUser.js", "stickyNote.js", "halfBodyAvatar.js", "gizmo.js"
 ];
 
 let AA = true;
 
-function getAntialias() {
+console.log("%cTHREE.REVISION:", "color: #f00", THREE.REVISION);
+
+async function getAntialias() {
     // turn off antialiasing for mobile and safari
     // Safari has exhibited a number of problems when using antialiasing. It is also extremely slow rendering webgl. This is likely on purpose by Apple.
     // Firefox seems to be dissolving in front of our eyes as well. It is also much slower.
@@ -50,10 +53,10 @@ function getAntialias() {
     if (urlOption) {
         if (urlOption === "true") {
             console.log(`antialias is true, urlOption AA is set`);
-            return Promise.resolve(true);
+            return true;
         } else {
             console.log(`antialias is false, urlOption AA is unset`);
-            return Promise.resolve(false);
+            return false;
         }
     }
     let aa = true;
@@ -64,11 +67,13 @@ function getAntialias() {
     const isMobile = !!("ontouchstart" in window);
     if (isMobile) aa = false;
 
-    return (navigator.xr.isSessionSupported("immersive-vr").catch((_err) => false)).then((supported) => {
+    try {
+        const supported = await navigator.xr.isSessionSupported("immersive-vr");
         if (supported) {aa = supported;}
-        console.log(`antialias is ${aa}, mobile: ${isMobile}, browser: ${isFirefox ? "Firefox" : isSafari ? "Safari" : "Other Browser"}`);
-        return aa;
-    });
+    } catch (_) { /* ignore */ }
+
+    console.log(`antialias is ${aa}, mobile: ${isMobile}, browser: ${isFirefox ? "Firefox" : isSafari ? "Safari" : "Other Browser"}`);
+    return aa;
 }
 
 console.log('%cTHREE.REVISION:', 'color: #f00', THREE.REVISION);
@@ -389,12 +394,12 @@ class MyModelRoot extends ModelRoot {
             MicroverseAppManager,
             BehaviorModelManager,
             FontModelManager,
-            ...(Constants.UseRapier ? [{service: RapierPhysicsManager, options: {useCollisionEventQueue: true}}] : [])
+            PhysicsManager,
         ];
     }
+
     init(options, persistentData) {
         super.init(options);
-
         let appManager = this.service("MicroverseAppManager");
         appManager.add(MultiBlaster);
         appManager.add(TextFieldActor);
@@ -402,9 +407,11 @@ class MyModelRoot extends ModelRoot {
 
         this.ensurePersistenceProps();
         this.subscribe(this.sessionId, "triggerPersist", "triggerPersist");
+        this.subscribe(this.sessionId, "addBroadcaster", "addBroadcaster");
         this.subscribe(this.id, "loadStart", "loadStart");
         this.subscribe(this.id, "loadOne", "loadOne");
         this.subscribe(this.id, "loadDone", "loadDone");
+        this.subscribe(this.id, "removeAll", "removeAll");
 
         if (persistentData) {
             console.log("loading persistent data");
@@ -511,6 +518,16 @@ class MyModelRoot extends ModelRoot {
         this.savePersistentData();
     }
 
+    addBroadcaster(viewId) {
+        let manager = this.service("PlayerManager");
+        let player = manager.player(viewId);
+        if (player) player.broadcaster = true;
+        if (!this.broadcastMode) {
+            this.broadcastMode = true;
+            this.publish(this.sessionId, "broadcastModeEnabled");
+        }
+    }
+
     loadStart(key) {
         this.loadKey = key;
         this.loadBuffer = [];
@@ -552,6 +569,37 @@ class MyModelRoot extends ModelRoot {
         }
     }
 
+    removeAll() {
+        /*
+        let actors = this.service("ActorManager").actors;
+        let avatarBehaviors = new Set();
+        for (let [_k, actor] of actors) {
+            if (actor.playerId) {
+                if (actor.behaviorModules) {
+                    avatarBehaviors.add(...actor.behaviorModules);
+                }
+                continue;
+            }
+            actor.destroy();
+        }
+
+        let manager = this.service("BehaviorModelManager");
+
+        let modules = manager.moduleDefs;
+
+        let newModuleDefs = [];
+
+        for (let [_k, v] of modules) {
+            if (avatarBehaviors.has(v.externalName)) {
+                newModuleDefs.push(v);
+            }
+        }
+
+        manager.cleanUp();
+        manager.loadLibraries(newModuleDefs);
+        */
+    }
+
     loadFromFile({ _name, version, data }, asScene, pose) {
         try {
             let saver = new WorldSaver(CardActor);
@@ -577,11 +625,28 @@ class MyModelRoot extends ModelRoot {
 
 MyModelRoot.register("MyModelRoot");
 
+// Broadcast mode is to support larger audiences. It disables sending
+// reflector messages for mere spectators. Broadcasters are still able
+// to send reflector messages.
+// This should be a method of MyViewRoot but we can't access "this"
+// until after the super() call in the constructor.
+// We need it this early because otherwise messages would be
+// sent during construction of some views
+function setupBroadcastMode(model) {
+    const searchParams = new URLSearchParams(window.location.search);
+    const broadcasting = searchParams.get("broadcastMode") === "true";
+    if (model.broadcastMode && !broadcasting) {
+        // HACK need a proper way to enable viewOnly mode
+        model.__realm.vm.controller.sessionSpec.viewOnly = true;
+    }
+    return broadcasting;
+}
+
 class MyViewRoot extends ViewRoot {
     static viewServices() {
         const services = [
             InputManager,
-            {service: ThreeRenderManager, options:{useBVH: true, antialias: getAntialias()}},
+            {service: ThreeRenderManager, options:{useBVH: true, antialias: AA}},
             AssetManager,
             KeyFocusManager,
             FontViewManager,
@@ -594,6 +659,7 @@ class MyViewRoot extends ViewRoot {
     }
 
     constructor(model) {
+        const broadcasting = setupBroadcastMode(model);
         super(model);
         const threeRenderManager = this.service("ThreeRenderManager");
         const renderer = threeRenderManager.renderer;
@@ -607,6 +673,7 @@ class MyViewRoot extends ViewRoot {
         renderer.shadowMap.enabled = true;
         renderer.localClippingEnabled = true;
         this.setAnimationLoop(this.session);
+        if (broadcasting) this.publish(this.sessionId, "addBroadcaster", this.viewId);
     }
 
     detach() {
@@ -664,8 +731,9 @@ function startWorld(appParameters, world) {
         flags: ["microverse"],
     };
 
-    // remove portal parameter from url for QR code
+    // remove portal and broadcast parameters from url for QR code
     App.sessionURL = deleteParameter(App.sessionURL, "portal");
+    App.sessionURL = deleteParameter(App.sessionURL, "broadcastMode");
 
     return loadLoaders()
         .then(() => {
@@ -691,12 +759,48 @@ https://croquet.io`.trim());
         });
 }
 
+function isRunningLocalNetwork() {
+    let hostname = window.location.hostname;
+
+    if (/^\[.*\]$/.test(hostname)) {
+        hostname = hostname.slice(1, hostname.length - 1);
+    }
+
+    let local_patterns = [
+        /^localhost$/,
+        /^.*\.local$/,
+        /^.*\.ngrok.io$/,
+        // 10.0.0.0 - 10.255.255.255
+        /^(::ffff:)?10(?:\.\d{1,3}){3}$/,
+        // 127.0.0.0 - 127.255.255.255
+        /^(::ffff:)?127(?:\.\d{1,3}){3}$/,
+        // 169.254.1.0 - 169.254.254.255
+        /^(::f{4}:)?169\.254\.([1-9]|1?\d\d|2[0-4]\d|25[0-4])\.\d{1,3}$/,
+        // 172.16.0.0 - 172.31.255.255
+        /^(::ffff:)?(172\.1[6-9]|172\.2\d|172\.3[01])(?:\.\d{1,3}){2}$/,
+        // 192.168.0.0 - 192.168.255.255
+        /^(::ffff:)?192\.168(?:\.\d{1,3}){2}$/,
+        // fc00::/7
+        /^f[cd][\da-f]{2}(::1$|:[\da-f]{1,4}){1,7}$/,
+        // fe80::/10
+        /^fe[89ab][\da-f](::1$|:[\da-f]{1,4}){1,7}$/,
+        // ::1
+        /^::1$/,
+    ];
+
+    for (let i = 0; i < local_patterns.length; i++) {
+        if (local_patterns[i].test(hostname)) {return true;}
+    }
+
+    return false;
+}
+
 export function startMicroverse() {
     let setButtons = (display) => {
-        ["usersComeHereBttn", "homeBttn", "worldMenuBttn"].forEach((n) => {
-            let bttn = document.querySelector("#" + n);
-            if (bttn) {
-                bttn.style.display = display;
+        ["usersComeHereBtn", "homeBtn", "worldMenuBtn"].forEach((n) => {
+            let btn = document.querySelector("#" + n);
+            if (btn) {
+                btn.style.display = display;
             }
         });
     };
@@ -744,27 +848,29 @@ async function launchMicroverse() {
         Constants.AvatarNames = defaultAvatarNames;
         Constants.SystemBehaviorDirectory = defaultSystemBehaviorDirectory;
         Constants.SystemBehaviorModules = defaultSystemBehaviorModules;
-        if (json.data.useRapier) {
-            Constants.UseRapier = json.data.useRapier;
-        }
         Constants.BehaviorModules = json.data.behaviormodules;
         Constants.DefaultCards = json.data.cards;
         Constants.Library = new CodeLibrary();
         Constants.Library.addModules(json.data.behaviorModules);
     }
+
     let apiKeysModule;
+    let local = isRunningLocalNetwork();
+    let apiKeysFile = local ? "apiKey-dev.js" : "apiKey.js";
+
     try {
         // use eval to hide import from webpack
-        apiKeysModule = await eval(`import('${baseurl}apiKey.js')`);
+        apiKeysModule = await eval(`import('${baseurl}${apiKeysFile}')`);
+
         const { apiKey, appId } = apiKeysModule.default;
-        if (typeof apiKey !== "string") throw Error("apiKey.js: apiKey must be a string");
-        if (typeof appId !== "string") throw Error("apiKey.js: appId must be a string");
-        if (!apiKey.match(/^[_a-z0-9]+$/i)) throw Error(`invalid apiKey: "${apiKey}"`);
-        if (!appId.match(/^[-_.a-z0-9]+$/i)) throw Error(`invalid appId: "${appId}"`);
+        if (typeof apiKey !== "string") throw Error(`${apiKeysFile}: apiKey must be a string`);
+        if (typeof appId !== "string") throw Error(`${apiKeysFile}: appId must be a string`);
+        if (!apiKey.match(/^[_a-z0-9]+$/i)) throw Error(`${apiKeysFile}: invalid apiKey: "${apiKey}"`);
+        if (!appId.match(/^[-_.a-z0-9]+$/i)) throw Error(`${apiKeysFile}: invalid appId: "${appId}"`);
     } catch (error) {
-        if (error.name === "TypeError") {
-            // apiKey.js not found, use local dev key
-            console.warn("apiKey.js not found, using default key for local development. Please create a valid apiKey.js (see croquet.io/keys)");
+        if (error.name === "TypeError" && local) {
+            // apiKey-dev.js not found, use default dev key
+            console.warn(`${apiKeysFile} not found, using default key for local development. Please create a valid apiKey-dev.js for local development, and apiKey.js for deployment (see croquet.io/keys)`);
             apiKeysModule = {
                 default: {
                     apiKey: "1kBmNnh69v93i5tOpj7bqqaJxjD3HJEucxd7egi7H",
@@ -772,8 +878,8 @@ async function launchMicroverse() {
                 }
             };
         } else {
-            console.log(error);
-            throw Error("Please make sure that you have created a valid apiKey.js (see croquet.io/keys)");
+            console.error(error);
+            throw Error("Please make sure that you have created a valid apiKey-dev.js for local development, and apiKey.js for deployment (see croquet.io/keys)");
         }
     };
     // Default parameters are filled in the body of startWorld. You can override them.

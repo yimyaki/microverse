@@ -3,6 +3,61 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2022-10-21
+### Changed
+- Gizmo look is updated. in particular tools are rendered in front of other objects.
+- The user count is displayed at the top. Gather is now in the world menu.
+- Event routing honor renderOrder so that object rendered in front with it is tested first.
+
+### Added
+- Better support for adding a card to avatar.
+
+## 2022-10-14
+### Changed
+- webpack.config.js is changed to copy all files under assets automatically
+- the world menu is updated.
+
+### Added
+- Broadcast mode is added.
+
+## 2022-10-07
+### Fixed
+- Deletion of gizmo when a peer drops out or times out.
+### Added
+- Add text scroll feature to text fields.
+
+## 2022-09-30
+### Added
+- World replace command (a lighter weight version of portals) is added.
+- Support for getters/setters from a bahavior is added.
+- The first version of Gizmo is added.
+
+### Changed
+- The handling of apiKey.js (now solely for production) and optional apiKey-dev.js (used if runniing locally) is changed.
+
+## 2022-09-23
+### Fixed
+- Regression in non-VR environment at start up is fixed.
+
+### Changed
+- The direction of the mouse look on laptop is fixed.
+
+### Added
+- sourceURL in comment allows the behavior name show up in the developer tool.
+
+## 2022-09-16
+### Changed
+- The settings interface uses avatar's 2D images stored on the server.
+
+### Added
+- sendToShell() function is available for behaviors.
+- A mechanism for an avatar to bypass dormantAvatarSpec.
+- a pawn side method getMyAvatar() is added.
+
+### Fixed
+- WebXR movement with joystick is fixed.
+- an error in accessing isSessionSupported is properly handled.
+
 ## 2022-09-09
 ### Fixed
 - Half body avatar movement improved.

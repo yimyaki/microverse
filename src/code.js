@@ -6,7 +6,7 @@ import * as WorldcoreExports from "@croquet/worldcore-kernel";
 const {ViewService, ModelService, GetPawn, Model, Constants} = WorldcoreExports;
 
 import * as WorldcoreThreeExports from "./ThreeRender.js";
-import * as WorldcoreRapierExports from "./physics.js";
+import * as PhysicsExports from "./physics.js";
 import * as FrameExports from "./frame.js";
 
 //console.log(WorldcoreRapierExports);
@@ -27,13 +27,24 @@ function newProxy(object, handler, module, behavior) {
             if (property === "_target") {return object;}
             if (property === "_behavior") {return behavior;}
             if (handler && handler.hasOwnProperty(property)) {
-                return new Proxy(handler[property], {
-                    apply: function(_target, thisArg, argumentList) {
-                        return handler[property].apply(thisArg, argumentList);
-                    }
-                });
+                // let behavior handler override the method / getter
+                const getter = Object.getOwnPropertyDescriptor(handler, property)?.get;
+                // use the card object as "this" in behavior getters
+                const handlerProp = getter ? getter.apply(object) : handler[property];
+                return handlerProp;
             }
             return target[property];
+        },
+        set(target, property, value) {
+            // let behavior handler override the method / getter
+            const setter = handler && handler.hasOwnProperty(property) && Object.getOwnPropertyDescriptor(handler, property)?.set;
+            if (setter) {
+                // use the card object as "this" in behavior setters
+                setter.apply(object, [value]);
+            } else {
+                target[property] = value;
+            }
+            return true;
         },
     });
 }
@@ -148,7 +159,7 @@ export const AM_Code = superclass => class extends superclass {
 
         let behavior = this.behaviorManager.lookup(moduleName, behaviorName);
         if (!behavior) {
-            throw new Error(`epxander named ${behaviorName} not found`);
+            throw new Error(`behavior named ${behaviorName} not found`);
         }
 
         return behavior.invoke(this[isProxy] ? this._target : this, name, ...values);
@@ -191,7 +202,7 @@ export const AM_Code = superclass => class extends superclass {
         // listener can be:
         // this.func
         // name for a base object method
-        // name for an expander method
+        // name for a behavior method
         // string with "." for this module, a behavior and method name
         // // string with "$" and "." for external name of module, a behavior name, method name
 
@@ -380,7 +391,7 @@ export const PM_Code = superclass => class extends superclass {
 
         let behavior = this.actor.behaviorManager.lookup(moduleName, behaviorName);
         if (!behavior) {
-            throw new Error(`epxander named ${behaviorName} not found`);
+            throw new Error(`behavior named ${behaviorName} not found`);
         }
 
         return behavior.invoke(this[isProxy] ? this._target : this, name, ...values);
@@ -571,6 +582,7 @@ class ScriptingBehavior extends Model {
         this.module = options.module;
         this.name = options.name;
         this.type = options.type;
+        this.location = options.location;
     }
 
     setCode(string) {
@@ -590,10 +602,10 @@ class ScriptingBehavior extends Model {
             source = trimmed;
         }
 
-        let code = `return (${source})`;
+        let code = `return (${source}) //# sourceURL=${window.location.origin}/behaviors_evaled/${this.location}/${this.name}`;
         let cls;
         try {
-            const Microverse = {...WorldcoreExports, ...WorldcoreThreeExports, ...WorldcoreRapierExports, ...FrameExports};
+            const Microverse = {...WorldcoreExports, ...WorldcoreThreeExports, ...PhysicsExports, ...FrameExports, RAPIER: PhysicsExports.Physics};
             cls = new Function("Worldcore", "Microverse", code)(Microverse, Microverse);
         } catch(error) {
             console.log("error occured while compiling:", source, error);
@@ -618,7 +630,7 @@ class ScriptingBehavior extends Model {
     ensureBehavior() {
         if (!this.$behavior) {
             let maybeCode = this.code;
-            this.setCode(maybeCode, true);
+            this.setCode(maybeCode);
         }
         return this.$behavior;
     }
@@ -632,13 +644,17 @@ class ScriptingBehavior extends Model {
 
         let proxy = newProxy(receiver, myHandler, module, this);
         try {
-            let f = proxy[name];
-            if (!f) {
+            let prop = proxy[name];
+            if (typeof prop === "undefined") {
                 throw new Error(`a method named ${name} not found in ${behaviorName || this}`);
             }
-            result = f.apply(proxy, values);
+            if (typeof prop === "function") {
+                result = prop.apply(proxy, values);
+            } else {
+                result = prop;
+            }
         } catch (e) {
-            console.error("an error occured in", behaviorName, name, e);
+            console.error(`an error occured in ${behaviorName}.${name}() on`, receiver, e);
         }
         return result;
     }
@@ -668,6 +684,14 @@ export class BehaviorModelManager extends ModelService {
     init(name) {
         super.init(name || "BehaviorModelManager");
 
+        this.cleanUp();
+
+        this.subscribe(this.id, "loadStart", "loadStart");
+        this.subscribe(this.id, "loadOne", "loadOne");
+        this.subscribe(this.id, "loadDone", "loadDone");
+    }
+
+    cleanUp() {
         this.moduleDefs = new Map(); // <externalName /* Bar1 */, {name /*Bar*/, actorBehaviors: Map<name, codestring>, pawnBehaviors: Map<name, codestring>, systemModule: boolean, location:string?}>
 
         this.modules = new Map(); // <externalName /* Bar1 */, {name /*Bar*/, actorBehaviors: Map<name, codestring>, pawnBehaviors: Map<name, codestring>, systemModule: boolean, location:string?}>
@@ -678,12 +702,7 @@ export class BehaviorModelManager extends ModelService {
         this.viewUses = new Map();  // {ScriptingBehavior [cardPawnId]}
 
         this.externalNames = new Map();
-
         this.loadCache = null;
-
-        this.subscribe(this.id, "loadStart", "loadStart");
-        this.subscribe(this.id, "loadOne", "loadOne");
-        this.subscribe(this.id, "loadDone", "loadDone");
     }
 
     createAvailableName(name, location) {
@@ -842,10 +861,15 @@ export class BehaviorModelManager extends ModelService {
                             let externalName = this.externalNames.get(`${location}$${moduleDef.name}`);
                             let behavior = this.lookup(externalName, behaviorName);
                             if (!behavior) {
+                                let cookedLocation = location;
+                                if (location.startsWith("(detached):")) {
+                                    cookedLocation = location.slice("(detached):".length);
+                                }
                                 behavior = ScriptingBehavior.create({
                                     systemBehavior: systemModule,
                                     module: module,
                                     name: behaviorName,
+                                    location: cookedLocation,
                                     type: behaviorType.slice(0, behaviorType.length - 1)
                                 });
                                 behavior.setCode(codeString);
@@ -987,12 +1011,24 @@ export class BehaviorViewManager extends ViewService {
         super(name || "BehaviorViewManager");
         this.url = null;
         this.socket = null;
-        window.BehaviorViewManager = this;
+        this.status = false;
         this.model = this.wellKnownModel("BehaviorModelManager");
         this.subscribe(this.model.id, "callViewSetupAll", "callViewSetupAll");
     }
 
-    setURL(url) {
+    isConnected() {
+        return this.socket && this.socket.readyState === WebSocket.OPEN && this.status === true;
+    }
+
+    destroy() {
+        if (this.callback) {
+            this.callback(false);
+        }
+        this.setURL(null);
+    }
+
+    setURL(url, optCallback) {
+        this.callback = optCallback;
         if (this.socket) {
             try {
                 this.socket.onmessage = null;
@@ -1005,6 +1041,24 @@ export class BehaviorViewManager extends ViewService {
         this.url = url;
         this.socket = new WebSocket(url);
         this.socket.onmessage = (event) => this.load(event.data);
+
+        this.socket.onopen = (_event) => {
+            console.log("connected");
+            this.status = true;
+            if (this.callback) {
+                this.callback(true);
+            }
+        };
+
+        this.socket.onclose = (_event) => {
+            console.log("disconnected");
+            this.socket.onmessage = null;
+            this.socket = null;
+            this.status = false;
+            if (this.callback) {
+                this.callback(false);
+            }
+        };
     }
 
     callViewSetupAll(pairs) {

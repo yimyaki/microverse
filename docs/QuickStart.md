@@ -4,9 +4,8 @@
 
 ## TL;DR
 
-    npm create croquet-microverse
-
-    npm start
+* `npm create croquet-microverse@latest`
+* `npm start`
 
 ---
 ## Introduction
@@ -25,20 +24,12 @@ The users of your worlds do not need these tools. Microverse worlds are deployed
 ---
 ## Installation Steps
 
-1. Create an empty directory for your project
+1. Create an empty directory for your project.
 2. In that directory, run the following command:
 
-       npm create croquet-microverse
+       npm create croquet-microverse@latest
 
-   This will create a ready-to-use folder structure for your project
-3. Paste your API key from [croquet.io/keys](https://croquet.io/keys/) (be sure to select "Microverse") into a file named `apiKey.js`
-
-        /* Copy this into a file named apiKey.js */
-        const apiKey = '123abcd_Get_your_own_key';
-        const appId = 'com.mycompany.myorg.myapp';
-        export default {apiKey, appId};
-
-    You can pick your own `appId` or go with the default shown in the template.
+   This will create a ready-to-use folder structure for your project.
 
 ---
 ## Video Walkthrough
@@ -54,37 +45,39 @@ In the directory you just created, run
 
     npm start
 
-This will start the development web server. In its output there will be lines like
+This will start the development web server. In its output there will be lines like:
 
-    [webpack-dev-server] Project is running at:
-    [webpack-dev-server] Loopback: http://localhost:9684/
-    [webpack-dev-server] On Your Network (IPv4): http://192.168.1.145:9684/
+    Running at:
+        http://127.0.0.1:9684
+        http://192.168.0.105:9684
+        http://[::1]:9684
 
-Copy the Network URL (e.g. `http://192.168.1.145:9684/`) and paste it into your web browser. We recommend using this URL over the `localhost` one to be able to join the session from other devices, e.g. your phone.
+Copy the Network URL (e.g. `http://192.168.0.105:9684/`) and paste it into your web browser. We recommend using this URL over the `localhost` one to be able to join the session from other devices, e.g. your phone.
 
 Congratulations!
 
 <p align="center">
-<img src="https://gist.githubusercontent.com/yoshikiohshima/45848af5a19dddbe1ea77f5d238fced0/raw/1b60d234f785e84f31eff3b4385c1dcbeb8831ad/shared-space.jpg" width=640"/>
+<img src="./assets/shared-space.jpg" width="640"/>
 </p>
 
 ---
 
 ## Deploy your world to a web server
 
-A Croquet app like Microverse is deployed as a static web app. You do not need any other kind of server.
+A Croquet app like Microverse is deployed as a static web app. You do not need any special server-side features.
 
-1. Create a production key at [croquet.io/keys](https://croquet.io/keys/) and add a restriction to your target URL, then edit the key in your `apiKey.js`
+1. Create a production key at [croquet.io/keys](https://croquet.io/keys/) and add a restriction to your target URL. Then create a file called apiKey.js (from apiKey.js-example) and paste your key into the value of `apiKey`.
 
-        const apiKey = '123abcd_production_key_goes_here';
+You can pick your own `appId`. We recommend to make a unique appId.
 
-2. Copy the `lib` directory
+```JavaScript
+        /* Copy this into a file named apiKey.js */
+        const apiKey = '123abcd_Get_your_own_key';
+        const appId = 'com.mycompany.myorg.myapp';
+        export default {apiKey, appId};
+```
 
-    At runtime, Microverse only needs the files in `node_modules/@croquet/microverse-library/lib` so we recommend to copy that directory to your project directory, and edit `index.html` to refer to it.
-
-        <script defer src="lib/index.js"></script>
-
-3. Upload the whole project directory to any web server.
+2. Upload the whole project directory to any web server.
 
     One simple way is GitHub pages. Check your directory into git, publish to GitHub, and enable [pages](https://pages.github.com).
 

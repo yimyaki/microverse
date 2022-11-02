@@ -17,8 +17,9 @@ import {PM_Pointer} from "./Pointer.js";
 import {CardActor, CardPawn} from "./card.js";
 import { TextFieldActor } from "./text/text.js";
 
-import {setupWorldMenuButton, filterDomEventsOn} from "./worldMenu.js";
-import { startSettingsMenu } from "./settingsMenu.js";
+import {setupWorldMenuButton, filterDomEventsOn, updateWorldMenu} from "./worldMenu.js";
+import { startSettingsMenu, startShareMenu } from "./settingsMenu.js";
+// import Swal from "sweetalert2";
 
 const EYE_HEIGHT = 1.676;
 const COLLIDE_THROTTLE = 50;
@@ -64,9 +65,15 @@ export class AvatarActor extends mix(CardActor).with(AM_Player) {
         this.listen("resetStartPosition", this.resetStartPosition);
         this.subscribe("playerManager", "presentationStarted", this.presentationStarted);
         this.subscribe("playerManager", "presentationStopped", this.presentationStopped);
+        this.subscribe("actorManager", "destroyed", this.actorDestroyed);
+
         this.listen("leavePresentation", this.leavePresentation);
         this.listen("setAvatarData", "setAvatarData");
         this.listen("setWorldState", "setWorldState");
+
+        this.listen("addOrCycleGizmo", "addOrCycleGizmo");
+        this.listen("removeGizmo", "removeGizmo");
+
         this.future(0).tick();
     }
 
@@ -90,6 +97,15 @@ export class AvatarActor extends mix(CardActor).with(AM_Player) {
         if (!this.inWorld) return;
         if (this._cardData.noNicknameCard) {return;}
 
+        const nickname = this._name;
+        if (!nickname) {
+            if (this.nicknameCard) {
+                this.nicknameCard.destroy();
+                this.nicknameCard = null;
+            }
+            return;
+        }
+
         const TEXT_SCALE = 0.005; // 100px of text scales to 0.5 world units
         const PADDING = 0.1; // horizontal and vertical
         const MARGIN_FUDGE = 0.02; // compensate for text widget's small gap at the left
@@ -98,7 +114,6 @@ export class AvatarActor extends mix(CardActor).with(AM_Player) {
             const marginTop = PADDING * 1.1 / TEXT_SCALE;
             const options = {
                 name: 'nickname',
-                className: "TextFieldActor",
                 behaviorModules: ["Billboard"],
                 translation: [0, 1, -0.1], // above and slightly in front
                 type: "text",
@@ -115,18 +130,13 @@ export class AvatarActor extends mix(CardActor).with(AM_Player) {
                 readOnly: true,
                 noDismissButton: true,
                 noSave: true,
+                avatarParts: true,
                 parent: this
             };
             this.nicknameCard = this.createCard(options);
         }
 
-        const nickname = this._name;
-        if (!nickname) {
-            this.nicknameCard.destroy();
-            this.nicknameCard = null;
-            return;
-        }
-        const measurement = TextFieldActor.defaultMeasurement(nickname);
+        const measurement = this.getTextFieldActorClass().defaultMeasurement(nickname);
         const signWidth = Math.min(measurement.width * TEXT_SCALE + 2 * PADDING, 2);
         const signHeight = Math.min(measurement.height * TEXT_SCALE + 2 * PADDING, 0.4);
         this.nicknameCard.load([{text: nickname, style: {color: 'white'}}]);
@@ -474,6 +484,37 @@ export class AvatarActor extends mix(CardActor).with(AM_Player) {
         this.publish(this.sessionId, "triggerPersist");
     }
 
+    actorDestroyed(id) {
+        if (this.gizmo?.target?.id === id) {
+            this.removeGizmo();
+        }
+    }
+
+    addOrCycleGizmo(data) {
+        let {target, viewId} = data;
+        if (!this.gizmo) {
+            if (!this.behaviorManager.modules.get("Gizmo")) {return;}
+            this.gizmo = this.createCard({
+                translation: target.translation,
+                name: 'gizmo',
+                behaviorModules: ["Gizmo"],
+                parent: target.parent,
+                type: "object",
+                noSave: true,
+            });
+            this.gizmo.target = target;
+            this.gizmo.creatorId = viewId;
+        } else {
+            this.publish(this.gizmo.id, "cycleModes");
+        }
+    }
+
+    removeGizmo() {
+        this.gizmo?.destroy();
+        delete this.gizmo;
+        this.say("clearGizmo"); // let the pawn know
+    }
+
     createPortal(translation, rotation, portalURL) {
         // sigh - all portals are "backwards"
         // or maybe *all* models are backwards and we need to fix dropPose and avatar models?
@@ -525,6 +566,11 @@ export class AvatarActor extends mix(CardActor).with(AM_Player) {
                 }
             }
         }
+    }
+
+    destroy() {
+        this.removeGizmo();
+        super.destroy();
     }
 }
 
@@ -645,6 +691,24 @@ class RemoteAvatarPawn extends mix(CardPawn).with(PM_Player, PM_ThreeVisible) {
         delete this.lastOpacity;
     }
 
+    setOpacity(opacity) {
+        if (!this.shape) {return;}
+        let handlerModuleName = this.actor._cardData.avatarEventHandler;
+        if (this.has(`${handlerModuleName}$AvatarPawn`, "mapOpacity")) {
+            opacity = this.call(`${handlerModuleName}$AvatarPawn`, "mapOpacity", opacity);
+        }
+        let transparent = opacity !== 1;
+        this.shape.visible = this.actor.inWorld && opacity !== 0;
+        this.shape.traverse(n => {
+            if (n.material) {
+                n.material.opacity = opacity;
+                n.material.transparent = transparent;
+                n.material.side = THREE.DoubleSide;
+                n.material.needsUpdate = true;
+            }
+        });
+    }
+
     removeChild(id) {
         super.removeChild(id);
         delete this.lastOpacity;
@@ -695,7 +759,8 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         renderMgr.avatar = this; // hack
 
         this.lastHeight = EYE_HEIGHT; // tracking the height above ground
-        this.yawDirection = -1; // which way the mouse moves the world depends on if we are using WASD or not
+        this.yawDirection = this.isMobile ? -1 : 1;
+        this.pitchDirection = this.isMobile ? 1 : -1;
 
         /*
         this.walkCamera = new THREE.Object3D();
@@ -711,14 +776,13 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         }
         this.fadeNearbyInterval = setInterval(() => this.fadeNearby(), 100);
 
-        document.getElementById("homeBttn").onclick = () => this.goHome();
-        filterDomEventsOn(document.getElementById("homeBttn"));
-        document.getElementById("usersComeHereBttn").onclick = () => this.comeToMe();
-        filterDomEventsOn(document.getElementById("usersComeHereBttn"));
-        document.getElementById("editModeBttn").setAttribute("mobile", this.isMobile);
-        document.getElementById("editModeBttn").setAttribute("pressed", false);
+        document.getElementById("homeBtn").onclick = () => this.goHome();
+        filterDomEventsOn(document.getElementById("homeBtn"));
 
-        let editButton = document.getElementById("editModeBttn");
+        document.getElementById("editModeBtn").setAttribute("mobile", this.isMobile);
+        document.getElementById("editModeBtn").setAttribute("pressed", false);
+
+        let editButton = document.getElementById("editModeBtn");
         editButton.onpointerdown = (evt) => this.setEditMode(evt);
         editButton.onpointerup = (evt) => this.clearEditMode(evt);
 
@@ -827,32 +891,41 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         // this actor - and hence for this pawn, and all RemoteAvatarPawns that other
         // users have for it.
         const inWorld = this.isPrimary;
-        let actorSpec;
-        let avatarSpec;
-        if (inWorld && dormantAvatarSpec) {
-            actorSpec = dormantAvatarSpec;
-            actorSpec.inWorld = true;
-            dormantAvatarSpec = null;
-            avatarSpec = actorSpec.cardData;
-        } else {
-            actorSpec = { inWorld };
-            const anchor = this.anchorFromURL(window.location, !this.isPrimary);
-            if (anchor) {
-                actorSpec.anchor = anchor; // actor or {translation, rotation}
-                actorSpec.translation = anchor.translation;
-                actorSpec.rotation = anchor.rotation;
-            }
-            let tempCardSpec = this.makeCardSpecFrom(window.settingsMenuConfiguration, this.actor);
-            avatarSpec = {...tempCardSpec};
-        }
 
-        this.say("setWorldState", {
-            inWorld: actorSpec.inWorld,
-            translation: actorSpec.translation,
-            rotation: actorSpec.rotation,
-            anchor: actorSpec.anchor});
-        this.say("setAvatarData", avatarSpec); // NB: after setting actor's name
-        this.say("resetStartPosition");
+        // spectator pawns cannot talk to their actors
+        if (this.spectator) {
+            // start spectators to home position
+            this.goHome();
+        } else {
+            // regular avatars
+            let actorSpec;
+            let avatarSpec;
+            if (inWorld && dormantAvatarSpec) {
+                actorSpec = dormantAvatarSpec;
+                actorSpec.inWorld = true;
+                dormantAvatarSpec = null;
+                avatarSpec = actorSpec.cardData;
+            } else {
+                actorSpec = { inWorld };
+                const anchor = this.anchorFromURL(window.location, !this.isPrimary);
+                if (anchor) {
+                    actorSpec.anchor = anchor; // actor or {translation, rotation}
+                    actorSpec.translation = anchor.translation;
+                    actorSpec.rotation = anchor.rotation;
+                }
+                let tempCardSpec = this.makeCardSpecFrom(window.settingsMenuConfiguration, this.actor);
+                avatarSpec = {...tempCardSpec};
+            }
+
+            // FIXME: do not send 3 messages via reflector
+            this.say("setWorldState", {
+                inWorld: actorSpec.inWorld,
+                translation: actorSpec.translation,
+                rotation: actorSpec.rotation,
+                anchor: actorSpec.anchor});
+            this.say("setAvatarData", avatarSpec); // NB: after setting actor's name
+            this.say("resetStartPosition");
+        }
 
         this.subscribe("playerManager", "playerCountChanged", this.showNumbers);
         this.listen("setLookAngles", this.setLookAngles);
@@ -866,10 +939,15 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
 
         this.subscribe(this.id, "3dModelLoaded", "modelLoaded");
 
-        console.log(frameName(), "MyPlayerPawn created", this, "primary:", this.isPrimary);
+        this.listen("clearGizmo", this.clearGizmo);
+
+        this.subscribe("playerManager", "presentationStarted", this.presentationStarted);
+        this.subscribe("playerManager", "presentationStopped", this.presentationStopped);
 
         this.wasdVelocity = [0, 0, 0];
         this.wasdMap = {w: false, a: false, d: false, s: false};
+
+        console.log(frameName(), "MyPlayerPawn created", this, "primary:", this.isPrimary);
     }
 
     detach() {
@@ -878,6 +956,9 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
             clearInterval(this.fadeNearbyInterval);
             this.fadeNearbyInterval = null;
         }
+
+        this.gizmoTargetPawn?.unselectEdit();
+        delete this.gizmoTargetPawn;
         delete this.modelLoadTime;
         super.detach();
     }
@@ -911,6 +992,14 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
 
     get presenting() {
         return this.actor.service("PlayerManager").presentationMode === this.viewId;
+    }
+
+    get spectator() {
+        if (!this.wellKnownModel("modelRoot").broadcastMode) return false;
+        if (this.actor.broadcaster) return false;
+        // in case addBroadcaster for our view has not been processed yet by model
+        const searchParams = new URLSearchParams(window.location.search);
+        return searchParams.get("broadcastMode") !== "true";
     }
 
     setWorldSwitchFreeze(bool) {
@@ -999,7 +1088,24 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
 
     loadvrse(buffer) {
         let result = new TextDecoder("utf-8").decode(buffer);
-        this.loadFromFile(result, false, true);
+        let parsed;
+        try {
+            parsed = JSON.parse(result);
+        } catch (e) {
+            console.log("vrse file is not in JSON format");
+        }
+
+        if (!parsed) {return;}
+
+        let cards = parsed.data.cards;
+        let toplevel = 0;
+        for (let i = 0; i < cards.length; i++) {
+            let card = cards[i].card;
+            if (!card.parent) {toplevel++;}
+        }
+
+        let asScene = toplevel >= 2;
+        this.loadFromFile(result, asScene, !asScene);
     }
 
     dropPose(distance, optOffset) { // compute the position in front of the avatar
@@ -1041,29 +1147,48 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
 
     showNumbers() {
         let manager = this.actor.service("PlayerManager");
-        let comeHere = document.getElementById("usersComeHereBttn");
-        let userCountReadout = comeHere.querySelector("#userCountReadout");
-        if (userCountReadout) {
-            // TODO: change PlayerManager to only create avatars for players that are actually in the world
-            let total = manager.players.size;
-            let here = manager.playersInWorld().length;
-            let tooltip = `${here} ${here === 1 ? "user is" : "users are"} in this world`;
-            if (here !== total) {
-                let watching = total - here;
-                tooltip += `, ${watching} ${watching === 1 ? "user has" : "users have"} not entered yet`;
-                total = `${here}+${watching}`;
-            }
-            if (manager.presentationMode) {
-                let followers = manager.followers.size; // includes the presenter
-                userCountReadout.textContent = `${followers}/${total}`;
-                tooltip = `${followers} ${followers === 1 ? "user" : "users"} in guided tour, ${tooltip}`;
-            } else {
-                userCountReadout.textContent = `${total}`;
-            }
-            comeHere.setAttribute("title", tooltip);
+        let userCountDisplay = document.getElementById("userCountDisplay");
+        if (this.service("AgoraChatManager")) {
+            if (userCountDisplay) {userCountDisplay.remove();}
+            return;
         }
 
-        comeHere.setAttribute("presenting", this.presenting);
+        if (!userCountDisplay) {
+            let c = document.createElement("div");
+            c.innerHTML = `<div id="userCountDisplay"><div id="userCountReadout">0</div></div>`;
+            userCountDisplay = c.firstChild;
+            document.body.appendChild(userCountDisplay);
+        }
+
+        let readout = userCountDisplay.querySelector("#userCountReadout");
+        if (!readout) {return;}
+
+        // TODO: change PlayerManager to only create avatars for players that are actually in the world
+        let total = manager.players.size;
+        let here = manager.playersInWorld().length;
+        let suffix = here === 1 ? "user" : "users";
+        let tooltip = `${here} ${here === 1 ? "user is" : "users are"} in this world`;
+        if (here !== total) {
+            let watching = total - here;
+            tooltip += `, ${watching} ${watching === 1 ? "user has" : "users have"} not entered yet`;
+            total = `${here}+${watching}`;
+        }
+        if (manager.presentationMode) {
+            let followers = manager.followers.size; // includes the presenter
+            readout.textContent = `${followers}/${total} ${suffix}`;
+            tooltip = `${followers} ${followers === 1 ? "user" : "users"} in guided tour, ${tooltip}`;
+        } else {
+            readout.textContent = `${total} ${suffix}`;
+        }
+        userCountDisplay.setAttribute("title", tooltip);
+        readout.setAttribute("presenting", this.presenting);
+    }
+
+    presentationStarted() {
+        updateWorldMenu(this);
+    }
+    presentationStopped() {
+        updateWorldMenu(this);
     }
 
     modelLoaded() {
@@ -1320,7 +1445,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
             this.tug = 0.2;
             const manager = this.actor.service("PlayerManager");
             this.throttle = (manager.presentationMode === this.actor.playerId) ? 60 : 125;
-            if (this.actor.inWorld) {
+            if (this.actor.inWorld || this.spectator) {
                 // get the potential new pose from velocity and spin.
                 // the v and q variable is passed around to compute a new position.
                 // unless positionTo() is called the avatar state (should) stays the same.
@@ -1339,7 +1464,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
                     } else {
                         this.lastCollideTranslation = vq.v;
                     }
-                    if (this.actor.fall && time - this.lastUpdateTime > THROTTLE) {
+                    if ((this.actor.fall || this.spectator) && time - this.lastUpdateTime > THROTTLE) {
                         if (time - this.lastCollideTime > COLLIDE_THROTTLE) {
                             this.lastCollideTime = time;
                             vq = this.checkFall(vq);
@@ -1795,7 +1920,6 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
             case 'a': case 'A': // left strafe
             case 'd': case 'D': // right strafe
             case 's': case 'S': // backward
-                this.yawDirection = -2;
                 this.wasdMap[e.key.toLowerCase()] = true;
                 switch (e.key) {
                     case 'w': case 'W': // forward
@@ -1830,7 +1954,6 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
             case 'a': case 'A': // left strafe
             case 'd': case 'D': // right strafe
             case 's': case 'S': // backward
-                this.yawDirection = -1;
                 this.wasdMap[e.key.toLowerCase()] = false;
                 let h;
                 if (this.wasdMap.a && !this.wasdMap.d) {
@@ -1875,38 +1998,46 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         return[c * (xy[0] - w), c * (h - xy[1])];
     }
 
-    pointerDown(e) {
-        if (e.ctrlKey || e.altKey) { // should be the first responder case
-            const render = this.service("ThreeRenderManager");
-            const rc = this.pointerRaycast(e.xy, render.threeLayerUnion('pointer'));
-            this.targetDistance = rc.distance;
-            let p3e = this.pointerEvent(rc, e);
-            p3e.lookNormal = this.actor.lookNormal;
-            let pawn = GetPawn(p3e.targetId);
-            pawn = pawn || null;
+    clearGizmo() {
+        this.gizmoTargetPawn = null;
+    }
 
-            if (this.editPawn !== pawn) {
-                if (this.editPawn) {
-                    console.log('pointerDown clear old editPawn')
-                    this.editPawn.unselectEdit();
-                    this.editPawn = null;
-                    this.editPointerId = null;
-                }
-                console.log('pointerDown set new editPawn', pawn)
-                if (pawn) {
-                    this.editPawn = pawn;
-                    this.editPointerId = e.id;
-                    this.editPawn.selectEdit();
-                    this.buttonDown = e.button;
-                    if (!p3e.normal) {p3e.normal = this.actor.lookNormal}
-                    this.p3eDown = p3e;
+    pointerDown(e) {
+        let render = this.service("ThreeRenderManager");
+        let rc = this.pointerRaycast(e.xy, render.threeLayerUnion("pointer"));
+        this.targetDistance = rc.distance;
+        let p3e = this.pointerEvent(rc, e);
+        let pawn = GetPawn(p3e.targetId);
+
+        let pawnIsGizmo = pawn && pawn.actor._behaviorModules?.some(m => m.startsWith("Gizmo"));
+
+        if (this.gizmoTargetPawn && !pawnIsGizmo && pawn !== this.gizmoTargetPawn) {
+            this.gizmoTargetPawn.unselectEdit();
+            this.gizmoTargetPawn = null;
+            this.publish(this.actor.id, "removeGizmo");
+        }
+
+        if (e.ctrlKey || e.altKey) { // should be the first responder case
+            if (pawn) {
+                if (pawnIsGizmo) {
+                    console.log("Tried to gizmo gizmo");
+                    this.publish(this.actor.id, "addOrCycleGizmo", {target: this.gizmoTargetPawn.actor, viewId: this.viewId});
+                } else {
+                    if (this.gizmoTargetPawn != pawn) {
+                        pawn.selectEdit();
+                    }
+                    this.gizmoTargetPawn = pawn;
+                    this.publish(this.actor.id, "addOrCycleGizmo", {target: this.gizmoTargetPawn.actor, viewId: this.viewId});
                 }
             } else {
-                console.log("pointerDown in editMode");
+                this.publish(this.actor.id, "removeGizmo");
             }
         } else {
-            if (!this.focusPawn && e.xy) {
-                // because this case is called as the last responder, facusPawn should be always empty
+            if (this.gizmoTargetPawn) {
+                this.gizmoTargetPawn.unselectEdit();
+                this.gizmoTargetPawn = null;
+                this.publish(this.actor.id, "removeGizmo");
+            } else {
                 this.dragWorld = this.xy2yp(e.xy);
                 this.lookYaw = q_yaw(this._rotation);
             }
@@ -1914,46 +2045,34 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
             if (this.has(`${handlerModuleName}$AvatarPawn`, "handlingEvent")) {
                 this.call(`${handlerModuleName}$AvatarPawn`, "handlingEvent", "pointerDown", this, e);
             }
+            if (!pawnIsGizmo) {
+                this.publish(this.actor.id, "removeGizmo");
+            }
         }
     }
 
     pointerMove(e) {
-        if (this.editPawn) {
-            // a pawn is selected for draggging
-            if (e.id === this.editPointerId) {
-                if (this.buttonDown === 0) {
-                    this.editPawn.dragPlane(this.setRayCast(e.xy), this.p3eDown);
-                }else if (this.buttonDown == 2) {
-                    this.editPawn.rotatePlane(this.setRayCast(e.xy), this.p3eDown);
-                }
-            }
-        }else {
-            // we should add and remove responders dynamically so that we don't have to check things this way
-            if (!this.focusPawn && this.isPointerDown && e.xy) {
-                let yp = this.xy2yp(e.xy);
-                let yaw = (this.lookYaw + (this.dragWorld[0] - yp[0]) * this.yawDirection);
-                let pitch = this.lookPitch + this.dragWorld[1] - yp[1];
-                pitch = pitch > 1 ? 1 : (pitch < -1 ? -1 : pitch);
-                this.dragWorld = yp;
-                this.lookTo(pitch, yaw);
-            }
+        // should be the last responder case
+        if (!this.focusPawn && this.isPointerDown && e.xy && this.dragWorld) {
+            let yp = this.xy2yp(e.xy);
+            let yaw = this.lookYaw + (this.dragWorld[0] - yp[0]) * this.yawDirection;
+            let pitch = this.lookPitch + (this.dragWorld[1] - yp[1]) * this.pitchDirection;
+            pitch = pitch > 1 ? 1 : (pitch < -1 ? -1 : pitch);
+            this.dragWorld = yp;
+            this.lookTo(pitch, yaw);
+        }
+        let handlerModuleName = this.actor._cardData.avatarEventHandler;
+        if (this.has(`${handlerModuleName}$AvatarPawn`, "handlingEvent")) {
+            this.call(`${handlerModuleName}$AvatarPawn`, "handlingEvent", "pointerMove", this, e);
         }
     }
 
-    pointerUp(_e) {
-        if (this.editPawn) {
-            this.editPawn.unselectEdit();
-            this.editPawn = null;
-            this.editPointerId = null;
-            this.p3eDown = null;
-            this.buttonDown = null;
-        }
-
-        // Below is a workaround to support an incomplete user program.
+    pointerUp(e) {
+        // Below is a suppot for an incomplete user program.
         // If there are left over first responders (pointer capture) from a user object,
         // delete them here.
         if (this.firstResponders) {
-            for (let [_eventType, array] of this.firstResponders) {
+            for (let [_eventName, array] of this.firstResponders) {
                 for (let i = array.length - 1; i >= 0; i--) {
                     let obj = array[i];
                     if (obj.pawn !== this) {
@@ -1962,15 +2081,19 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
                 }
             }
         }
+        let handlerModuleName = this.actor._cardData.avatarEventHandler;
+        if (this.has(`${handlerModuleName}$AvatarPawn`, "handlingEvent")) {
+            this.call(`${handlerModuleName}$AvatarPawn`, "handlingEvent", "pointerUp", this, e);
+        }
     }
 
     pointerTap(_e) {
-        if (this.editPawn) { // this gets set in pointerDown
-            this.editPawn.unselectEdit();
-            this.editPawn.showControls({avatar: this.actor.id,distance: this.targetDistance});
-            this.editPawn = null;
-            this.editPointerId = null;
+        /*
+        let handlerModuleName = this.actor._cardData.avatarEventHandler;
+        if (this.has(`${handlerModuleName}$AvatarPawn`, "handlingEvent")) {
+            this.call(`${handlerModuleName}$AvatarPawn`, "handlingEvent", "pointerTap", this, e);
         }
+        */
     }
 
     pointerWheel(e) {
@@ -2010,7 +2133,7 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
             // visible or invisible appropriately
             if (pawn._children) {
                 for (let c of pawn._children) {
-                    if (c.shape) c.shape.visible = visible;
+                    if (c.actor._cardData.avatarParts) c.shape.visible = visible;
                 }
             }
 
@@ -2110,7 +2233,6 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
     }
 
     showSettingsMenu() {
-        if (document.body.querySelector("#joinDialog")) {return;}
         let promise = new Promise((resolve, _reject) => {
             startSettingsMenu(false, resolve);
         });
@@ -2126,8 +2248,21 @@ export class AvatarPawn extends mix(CardPawn).with(PM_Player, PM_SmoothedDriver,
         });
     }
 
+    showShareMenu() {
+        startShareMenu(this);
+    }
+
     goHome() {
-        this.say("goHome");
+        if (!this.spectator) this.say("goHome");
+        else {
+            let anchor = this.anchorFromURL(window.location.href);
+            if (!anchor) anchor = {
+                translation: v3_zero(),
+                rotation: q_identity(),
+            }
+            anchor.translation[0] += 0.00001; // defeat the positionTo() optimization
+            this.positionTo(anchor.translation, anchor.rotation);
+        }
     }
 
     comeToMe() {

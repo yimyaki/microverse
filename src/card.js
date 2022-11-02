@@ -6,7 +6,7 @@
 
 import {
     Data, Constants, // re-exported from @croquet/croquet
-    Actor, Pawn, ModelService, ViewService, mix, AM_Smoothed, PM_Smoothed,
+    Actor, Pawn, ModelService, ViewService, mix, AM_Smoothed, PM_Smoothed, GetPawn,
     v3_dot, v3_cross, v3_sub, v3_add, v3_normalize, v3_magnitude, v3_sqrMag, v3_transform, v3_rotate,
     q_euler, q_multiply,
     m4_invert, m4_identity
@@ -51,6 +51,11 @@ export class CardActor extends mix(Actor).with(AM_Smoothed, AM_PointerTarget, AM
 
         // this.listen("dataScaleComputed", this.dataScaleComputed);
         this.listen("setAnimationClipIndex", this.setAnimationClipIndex);
+    }
+
+    destroy() {
+        this.publish("actorManager", "destroyed", this.id);
+        super.destroy();
     }
 
     separateOptions(options) {
@@ -348,6 +353,7 @@ export class CardActor extends mix(Actor).with(AM_Smoothed, AM_PointerTarget, AM
     intrinsicProperties() {return intrinsicProperties;}
 
     saySelectEdit() {
+        console.log("saySelectEdit says doSelectEdit");
         this.say("doSelectEdit");
     }
 
@@ -394,6 +400,8 @@ export class CardActor extends mix(Actor).with(AM_Smoothed, AM_PointerTarget, AM
                         runs: runs,
                     };
                     Cls = TextFieldActor;
+                } else if (card.type === "text") {
+                    Cls = TextFieldActor;
                 } else if (card.className) {
                     Cls = appManager.get(card.className);
                     delete options.className;
@@ -413,12 +421,6 @@ export class CardActor extends mix(Actor).with(AM_Smoothed, AM_PointerTarget, AM
 
                 if (Array.isArray(card.dataRotation) && card.dataRotation.length === 3) {
                     options.dataRotation = q_euler(...card.dataRotation);
-                }
-
-                // TODO: remove after alpha
-                if (options.targetURL && !options.portalURL) {
-                    options.portalURL = options.targetURL;
-                    delete options.targetURL;
                 }
 
                 if (nameMap) {
@@ -449,9 +451,13 @@ export class CardActor extends mix(Actor).with(AM_Smoothed, AM_PointerTarget, AM
     }
 
     get rigidBody() {
-        // return this.$rigidBody;
-        return this.call("Rapier$RapierActor", "getRigidBody");
-        // return this.call("Physics$PhysicsActor", "getRigidBody");
+        // the API changed from rapier 0.7.6 to 0.9.0, but we do not want to load two versions of Rapier engines.
+        // The old session with Rapier 0.7.6 will still load with the stubbed out versions of behaviors/croquet/rapier.js.
+        // but the simulation in such a session won't run anymore.
+        if (this._oldRapier07) {
+            return {applyForce: () => undefined, applyTorque: () => undefined};
+        }
+        return this.call("Physics$PhysicsActor", "getRigidBody");
     }
 
     setPhysicsWorld(v) {
@@ -469,6 +475,10 @@ export class CardActor extends mix(Actor).with(AM_Smoothed, AM_PointerTarget, AM
 
     collisionEvent(rb1, rb2, started) {
         return this.call(this.collisionEventHandlerBehavior, this.collisionEventHandlerMethod, rb1, rb2, started);
+    }
+
+    getTextFieldActorClass() {
+        return TextFieldActor;
     }
 }
 CardActor.register('CardActor');
@@ -495,6 +505,7 @@ export class CardPawn extends mix(Pawn).with(PM_Smoothed, PM_ThreeVisible, PM_Po
         this.animationInterval = null;
         this.subscribe(this.id, "3dModelLoaded", this.tryStartAnimation);
         this.constructCard();
+        this._editMode = false; // used to determine if we should ignore pointer events
     }
 
     sayDeck(message, vars) {
@@ -537,6 +548,7 @@ export class CardPawn extends mix(Pawn).with(PM_Smoothed, PM_ThreeVisible, PM_Po
         if (cardData.textureLocation) {
             assetManager.revoke(cardData.textureLocation, this.id);
         }
+        this.cleanupColliderObject();
         super.destroy();
     }
 
@@ -550,12 +562,16 @@ export class CardPawn extends mix(Pawn).with(PM_Smoothed, PM_ThreeVisible, PM_Po
 
     cleanupColliderObject() {
         if (this.colliderObject) {
-            this.colliderObject.children.forEach((m) => {
-                this.colliderObject.remove(m);
+            [...this.colliderObject.children].forEach((m) => {
+                if (m.geometry) {
+                    m.geometry.dispose();
+                    this.colliderObject.remove(m);
+                }
             });
             if (this.colliderObject.geometry) {
                 this.colliderObject.geometry.dispose();
             }
+            this.colliderObject.removeFromParent();
             delete this.colliderObject;
         }
     }
@@ -652,11 +668,16 @@ export class CardPawn extends mix(Pawn).with(PM_Smoothed, PM_ThreeVisible, PM_Po
             let color = options.placeholderColor || 0x808080;
             let offset = options.placeholderOffset || [0, -1.7, 0];
 
-            const gridImage = './assets/images/grid.png';
-            const texture = new THREE.TextureLoader().load(gridImage);
+            const gridImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAOnAAADusBZ+q87AAAAJtJREFUeJzt0EENwDAAxLDbNP6UOxh+NEYQ5dl2drFv286598GrA7QG6ACtATpAa4AO0BqgA7QG6ACtATpAa4AO0BqgA7QG6ACtATpAa4AO0BqgA7QG6ACtATpAa4AO0BqgA7QG6ACtATpAa4AO0BqgA7QG6ACtATpAa4AO0BqgA7QG6ACtATpAa4AO0BqgA7QG6ACtATpAu37AD8eaBH5JQdVbAAAAAElFTkSuQmCC";
+
+            let image = new Image();
+            let texture = new THREE.Texture(image);
+            image.onload = () => texture.needsUpdate = true;
+            image.src = gridImage;
+
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
-            texture.repeat.set( size[0], size[2] );
+            texture.repeat.set(size[0], size[2]);
             let pGeometry = new THREE.BoxGeometry(...size);
             let pMaterial = new THREE.MeshStandardMaterial({map:texture, color: color, side: THREE.FrontSide});
 
@@ -833,7 +854,7 @@ export class CardPawn extends mix(Pawn).with(PM_Smoothed, PM_ThreeVisible, PM_Po
 
         if (dataLocation) {
             return this.getBuffer(dataLocation).then((buffer) => {
-                assetManager.setCache(dataLocation, buffer, this.id);
+                 assetManager.setCache(dataLocation, buffer, this.id);
                 return assetManager.load(buffer, "svg", THREE, loadOptions);
             }).then((obj) => {
                 normalizeSVG(obj, depth, shadow, THREE);
@@ -851,6 +872,7 @@ export class CardPawn extends mix(Pawn).with(PM_Smoothed, PM_ThreeVisible, PM_Po
                 }
                 this.objectCreated(obj);
                 this.shape.add(obj);
+                this.publish(this.id, "2dModelLoaded");
             });
         } else {
             return texturePromise.then((textureObj) => {
@@ -880,6 +902,7 @@ export class CardPawn extends mix(Pawn).with(PM_Smoothed, PM_ThreeVisible, PM_Po
                 obj.name = "2d";
                 this.objectCreated(obj);
                 this.shape.add(obj);
+                this.publish(this.id, "2dModelLoaded");
             });
         }
     }
@@ -1114,8 +1137,10 @@ export class CardPawn extends mix(Pawn).with(PM_Smoothed, PM_ThreeVisible, PM_Po
         if (buffer) { return Promise.resolve(buffer); }
         if (!this.isDataId(name)) {
             return fetch(name)
-                .then((resp) => resp.arrayBuffer())
-                .then((arrayBuffer) => new Uint8Array(arrayBuffer));
+                .then((resp) => {
+                    if (!resp.ok) throw Error(`fetch failed: ${resp.status} ${resp.statusText}`);
+                    return resp.arrayBuffer();
+                }).then((arrayBuffer) => new Uint8Array(arrayBuffer))
         } else {
             let handle = Data.fromId(name);
             return Data.fetch(this.sessionId, handle);
@@ -1338,40 +1363,120 @@ export class CardPawn extends mix(Pawn).with(PM_Smoothed, PM_ThreeVisible, PM_Po
     }
 
     selectEdit() {
-        this.say('selectEdit');
+        this.say("selectEdit");
     }
 
     unselectEdit() {
-        this.say('unselectEdit')
+        this.say("unselectEdit")
         delete this._plane;
     }
 
     doSelectEdit() {
+        this._editMode = true;
         console.log("doSelectEdit")
         if (this.renderObject) {
-            this.addWire(this.renderObject);
+            this.addWireBox(this.renderObject);
         }
     }
 
     doUnselectEdit() {
+        this._editMode = false;
         console.log("doUnselectEdit")
         if (this.renderObject) {
-            this.removeWire(this.renderObject);
+            this.removeWireBox(this.renderObject);
         }
     }
 
     nop() {}
 
-    addWire(obj3d) {
-        let parts = [];
-        let lines = [];
+    getMyAvatar() {
+        let playerManager = this.actor.service("PlayerManager");
+        let myAvatar = playerManager.players.get(this.viewId);
+        if (!myAvatar) {return undefined;}
+        return GetPawn(myAvatar.id);
+    }
 
+
+    addWireBox(obj3d) {
+        let tmpMat = new THREE.Matrix4();
+        let currentMat = obj3d.matrix;
+        let box;
+        try {
+            obj3d.matrix = tmpMat;
+            box = new THREE.Box3().setFromObject(obj3d);
+        } finally {
+            obj3d.matrix = currentMat;
+        }
+
+        let min = box.min;
+        let max = box.max;
+
+        let x = max.x - min.x;
+        let ax = (max.x + min.x) / 2;
+        let y = max.y - min.y;
+        let ay = (max.y + min.y) / 2;
+        let z = max.z - min.z;
+        let az = (max.z + min.z) / 2;
+
+        let cylinder = (len, rotateSel, tx, ty, tz) => {
+            let cyl = new THREE.CylinderGeometry(0.02, 0.02, len);
+            if (rotateSel) {
+                cyl[rotateSel](Math.PI / 2);
+            }
+            cyl.translate(tx, ty, tz);
+            return cyl;
+        };
+
+        let c0 =  cylinder(x, "rotateZ", ax, max.y * 1.01, max.z * 1.01);
+        let c1 =  cylinder(x, "rotateZ", ax, max.y * 1.01, min.z * 1.01);
+        let c2 =  cylinder(x, "rotateZ", ax, min.y * 1.01, max.z * 1.01);
+        let c3 =  cylinder(x, "rotateZ", ax, min.y * 1.01, min.z * 1.01);
+
+        let c4 =  cylinder(y, null,      max.x * 1.01, ay, max.z * 1.01);
+        let c5 =  cylinder(y, null,      max.x * 1.01, ay, min.z * 1.01);
+        let c6 =  cylinder(y, null,      min.x * 1.01, ay, max.z * 1.01);
+        let c7 =  cylinder(y, null,      min.x * 1.01, ay, min.z * 1.01);
+
+        let c8 =  cylinder(z, "rotateX", max.x * 1.01, max.y * 1.01, az);
+        let c9 =  cylinder(z, "rotateX", max.x * 1.01, min.y * 1.01, az);
+        let c10 = cylinder(z, "rotateX", min.x * 1.01, max.y * 1.01, az);
+        let c11 = cylinder(z, "rotateX", min.x * 1.01 , min.y * 1.01, az);
+
+        let cylinders = [c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11];
+
+        let BufferGeometryUtils = THREE.BufferGeometryUtils;
+        let mergedGeometry = BufferGeometryUtils.mergeBufferGeometries(cylinders, false);
+
+        let mat = new THREE.MeshStandardMaterial({
+            color: 0xdddddd,
+            transparent: true,
+            opacity: 0.6,
+            depthTest: false,
+            depthWrite: false
+        });
+
+        let line = new THREE.Mesh(mergedGeometry, mat);
+        line._wireline = true;
+        line.renderOrder = 10000;
+        obj3d.add(line);
+    }
+
+    removeWireBox(obj3d) {
+        [...obj3d.children].forEach((c) => {
+            if (c._wireline) {
+                c.geometry.dispose();
+                c.material.dispose();
+                c.removeFromParent();
+            }
+        });
+    }
+
+    /*
+    showSelectEdit(obj3d) {
+        this.service("ThreeRenderManager").addToOutline(obj3d);
         obj3d.traverse((obj)=>{
             if(obj.geometry){
-                let edges = new THREE.EdgesGeometry(obj.geometry);
-                let line = new THREE.LineSegments( edges, new THREE.LineBasicMaterial( { color: 0x44ff44} ));
-                line.raycast = function(){};
-                lines.push(line);
+
                 let m = obj.material;
                 let mat;
                 if(Array.isArray(m))mat = m;
@@ -1383,24 +1488,23 @@ export class CardPawn extends mix(Pawn).with(PM_Smoothed, PM_ThreeVisible, PM_Po
                         m._oldColor = c;
                         let gray = (c.r * 0.299 + c.g * 0.587 + c.b * 0.114) * 0.50;
                         m.color = new THREE.Color(gray, gray, gray);
+                        m._oldOpacity = m.opacity;
+                        m.opacity = 0.5;
+                        m._oldTransparent = m.transparent;
+                        m.transparent = true;
+                        m.needsUpdate = true;
                     }
                 })
-                parts.push( obj );
             }
         });
-        for(let i = 0; i < lines.length; i++){
-            let line = lines[i];
-            line.type = '_lineHighlight';
-            parts[i].add(line);
-        }
     }
 
-    removeWire(obj3d) {
-        let lines = [];
+    showUnselectEdit(obj3d) {
+        this.service("ThreeRenderManager").clearOutline(obj3d);
         let mat;
         obj3d.traverse((obj)=>{
             if(obj.type === '_lineHighlight') {
-                lines.push(obj);
+                // lines.push(obj);
             } else if(obj.geometry) {
                 mat = (Array.isArray(obj.material)) ? obj.material : [obj.material];
                 mat.dispose = arrayDispose;
@@ -1408,18 +1512,17 @@ export class CardPawn extends mix(Pawn).with(PM_Smoothed, PM_ThreeVisible, PM_Po
                 mat.forEach(m=>{
                     if(m._oldColor) {
                         m.color = m._oldColor;
+                        m.opacity = m._oldOpacity;
+                        m.transparent = m._oldTransparent;
                         delete m._oldColor;
+                        delete m._oldOpacity;
+                        delete m._oldTransparent;
+                        m.needsUpdate = true;
                     }
                 });
             }
         });
-        for(let i = 0; i < lines.length;i++) {
-            let line = lines[i];
-            line.removeFromParent();
-            line.geometry.dispose();
-            line.material.dispose();
-        }
-    }
+    }*/
 
     saveCard(data) {
         if (data.viewId !== this.viewId) {return;}

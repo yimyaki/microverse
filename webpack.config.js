@@ -15,8 +15,9 @@ const config = {
             let name = pathData.chunk.id;
             if (typeof name === "number") name = "chunk"; // production mode
             name = name.replace(/(src_|_js)/g, '');
-            if (name === 'vendors-node_modules_croquet_worldcore-kernel_Mixins') name = "croquet";
+            if (name === 'vendors-node_modules_croquet_worldcore-kernel_Mixins') name = "worldcore";
             if (name === 'vendors-node_modules_dimforge_rapier3d_rapier') name = "rapier3d";
+            if (name === 'wonderland_croquet_libraries_packages_croquet_cjs_croquet-croquet') name = "croquet";
             if (name.includes('node_modules')) name = "misc";
             return `lib/${name}-[contenthash:8].js`;
         },
@@ -58,19 +59,14 @@ const config = {
         }),
         new CopyPlugin({
             patterns: [
-                { from: 'assets/3D/*'},
-                { from: 'assets/SVG/*'},
-                { from: 'assets/avatars/*'},
-                { from: 'assets/css/*'},
-                { from: 'assets/fonts/**/*'},
-                { from: 'assets/images/*'},
-                { from: 'assets/avatar-images/*'},
-                { from: 'assets/sky/*'},
+                { from: 'assets/**/*'},
+                { from: 'behaviors/**/*'},
                 { from: 'worlds/*.{js,vrse}'},
                 { from: 'meta/version.txt', to: 'meta/version.txt'},
-                { from: 'behaviors/**/*'}
+                { from: 'apiKey.js', noErrorOnMissing: true },
+                { from: 'apiKey-dev.js', noErrorOnMissing: true },
             ]
-        }),
+        })
     ],
 };
 
@@ -105,7 +101,7 @@ module.exports = (env, argv) => {
         config.plugins.push(
             new CopyPlugin({
                 patterns: [
-                    { from: 'apiKey.js', to: 'apiKey.js', noErrorOnMissing: true },
+                    { from: 'apiKey-dev.js', to: 'apiKey-dev.js', noErrorOnMissing: true },
                 ]
             })
         );

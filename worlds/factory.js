@@ -12,8 +12,6 @@ export function init(Constants) {
         "lights.js", "crane.js", "garage.js", "forklift.js", "circle.js", "cascade.js", "earth.js", "box.js", "drone.js", "spin.js", "flightTracker.js", "openPortal.js", "rearrange.js"
     ];
 
-    Constants.UseRapier = true;
-
     Constants.DefaultCards = [
         {
             card: {
@@ -49,7 +47,7 @@ export function init(Constants) {
                 name: "crane",
                 type: "object",
                 translation: [-1.4447057496318962, -5.504611090090481, 30.282952880859376],
-                behaviorModules: ["Rapier", "Crane"],
+                behaviorModules: ["Crane"],
                 layers: ["pointer"],
                 shadow: true,
                 scale: [0.4, 0.4, 0.4],
@@ -61,7 +59,7 @@ export function init(Constants) {
                 type: "object",
                 translation: [3.816793504629362, 4.336223779145266, 30.294897079467775], // [7.770442246960653, 1.7540892281749288, 13.950883253194933],
                 rotation: [0, 0, Math.PI],
-                craneSpeed: -0.003,
+                craneSpeed: -0.0010,
                 behaviorModules: ["CraneButton"],
                 shadow: true,
                 myScope: "A",
@@ -73,7 +71,7 @@ export function init(Constants) {
                 type: "object",
                 translation: [3.816793504629362, 4.436223779145266, 30.294897079467775],
                 rotation: [0, 0, 0],
-                craneSpeed: 0.003,
+                craneSpeed: 0.0010,
                 behaviorModules: ["CraneButton"],
                 shadow: true,
                 myScope: "A",
@@ -97,6 +95,7 @@ export function init(Constants) {
                 textScale: 0.007,
                 shadow: true,
                 fullbright: true,
+                noDismissButton: true,
             }
         },
         {
@@ -328,47 +327,11 @@ export function init(Constants) {
         },
         {
             card: {
-                name:"base",
-                type: "object",
-                layers: ["pointer"],
-                translation: [13.096899862946268, 1.971934214047139, 17.421859492871423],
-                rotation: [0.47123889803846897, Math.PI / 2, 0],
-                behaviorModules: ["Rapier", "Cascade"],
-                rapierSize: [5, 0.3, 5],
-                color: 0x997777,
-                rapierShape: "cuboid",
-                rapierType: "positionBased",
-                shadow: true,
-            }
-        },
-        {
-            card: {
-                name:"base 2",
-                type: "object",
-                layers: ["pointer"],
-                translation:  [16.762074207944522, 0.10577659184032862, 17.421859492871423],
-                rotation: [0.35123889803846897, Math.PI / 2, 0],
-                behaviorModules: ["Rapier", "Cascade"],
-                rapierSize: [5, 0.3, 2],
-                color: 0x997777,
-                rapierShape: "cuboid",
-                rapierType: "positionBased",
-                shadow: true,
-            }
-        },
-
-        {
-            card: {
-                name:"spray",
-                type: "object",
-                layers: ["pointer"],
-                translation: [11.342398091737556, 4.306399511061578, 17.421859492871423],
-                behaviorModules: ["Spray"],
-                rapierSize: [0.2, 0.2, 0.2],
-                rapierShape: "cuboid",
-                rapierType: "positionBased",
-                color: 0xcccccc,
-                shadow: true,
+                name: "cascade",
+                translation: [13.096899862946268, 1.7, 17.421859492871423],
+                rotation: [0, Math.PI / 2, 0],
+                behaviorModules: ["CascadeBox"],
+                type: "object"
             }
         },
         {
