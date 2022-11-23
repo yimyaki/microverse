@@ -4,12 +4,12 @@
 
 export function init(Constants) {
     Constants.AvatarNames = [
-        "newwhite", "madhatter", "marchhare", "queenofhearts", "cheshirecat", "alice"
+        "1", "2", "3", "4", "5", "6"
     ];
 
     Constants.UserBehaviorDirectory = "behaviors/scifi";
     Constants.UserBehaviorModules = [
-        "lights.js", "joeTheBox.js", "simpleSpin.js","door.js", "bloompass.js","tutorial.js", "glowingText.js", "worldRevolve.js"//"buttonLight.js", //,"openPortal.js"
+        "lights.js", "audio.js", "simpleSpin.js","door.js", "bloompass.js","tutorial.js", "glowingText.js", "worldRevolve.js"//"buttonLight.js", //,"openPortal.js"
     ];
     Constants.UseRapier = true;
 
@@ -23,7 +23,7 @@ export function init(Constants) {
                 dataLocation: "./assets/3D/SciFi_4.zip",
                 dataScale:[2,2,2], //[2,2,2]
                 //singleSided: true,
-                behaviorModules:["BloomPass","WorldPawn"],
+                behaviorModules:["WorldPawn", "FooMenu"],//["BloomPass","WorldPawn"],
                 shadow: true,
                 layers: ["walk"],
                 translation:[0, 0, 0],
@@ -136,6 +136,7 @@ export function init(Constants) {
                 type: "3d",
                 dataLocation: "./assets/3D/space_station.zip",
                 //fileName: "/testcube_1m.glb.zip",
+                behaviorModules: ["audio"],
                 layers: ["pointer"],
                 translation:[500, 5, -500],
                 dataScale:[4,4,4],
