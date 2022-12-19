@@ -183,23 +183,6 @@ class AvatarPawn {
         this.future(10).birdeye();
     }
 
-    orbit(){
-    }
-
-    // updateMotion(dx, dy) {
-    //     if(this.swoopPath == "return"){
-    //         return;
-    //     }
-    //     const JOYSTICK_V = 0.000030;
-    //     const MAX_V = 0.015;
-    //     const MAX_SPIN = 0.0004;
-    //     let v = dy * JOYSTICK_V;
-    //     v = Math.min(Math.max(v, -MAX_V), MAX_V);
-    //     const yaw = dx * (this.isMobile ? -2.5 * MAX_SPIN : -MAX_SPIN);
-    //     this.spin = q_euler(0, yaw ,0);
-    //     this.velocity = [0, 0, v];
-    //     this.maybeLeavePresentation();
-    // }
 
     teardown() {
         if (!this.isMyPlayerPawn) {return;}
@@ -243,43 +226,3 @@ export default {
 }
 
 /* globals Microverse */
-/*
-class LoadPawn {
-    setup() {
-        this.subscribe(this.id, "3dModelLoaded", "modelLoaded");
-    }
-    modelLoaded() {
-        if (this.shape.children.length === 1) {
-            this.load();
-        }
-    }
-    load() {
-        let helmet = this.shape.children.find((c) => c.name === "helmet");
-        if (helmet) {
-            helmet.removeFromParent();
-        }
-        let dataLocation = "./assets/3D/Drone2.glb";
-        this._model3dLoading = dataLocation;
-        let assetManager = this.service("AssetManager").assetManager;
-        this.getBuffer(dataLocation).then((buffer) => {
-            assetManager.setCache(dataLocation, buffer, this.id);
-            return assetManager.load(buffer, "glb", Microverse.THREE);
-        }).then((obj) => {
-            if (dataLocation !== this._model3dLoading) {
-                console.log("model load has been superseded");
-                return;
-            }
-            obj.name = "helmet";
-            obj.position.set(0, 2, 0);
-            this.shape.add(obj);
-        });
-    }
-}
-export default {
-    modules: [
-        {
-            name: "GLBLoader",
-            pawnBehaviors: [LoadPawn]
-        }
-    ]
-}*/
